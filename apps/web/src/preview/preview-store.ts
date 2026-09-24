@@ -115,7 +115,7 @@ function getPersistedPreviewQuality(
 	if (quality && isPreviewQuality(quality)) {
 		return quality;
 	}
-	return "full";
+	return "auto";
 }
 
 function readPersistedPreviewState(
@@ -133,8 +133,8 @@ export const usePreviewStore = create<PreviewState>()(
 			activeGuide: null,
 			overlays: DEFAULT_PREVIEW_OVERLAYS,
 			gridConfig: DEFAULT_GRID_CONFIG,
-			previewQuality: "full" as PreviewQuality,
-			resolvedQuality: "full" as ResolvedPreviewQuality,
+			previewQuality: "auto" as PreviewQuality,
+			resolvedQuality: "half" as ResolvedPreviewQuality,
 			toggleGuide: (guideId) => {
 				set((state) => ({
 					activeGuide: state.activeGuide === guideId ? null : guideId,
@@ -164,8 +164,8 @@ export const usePreviewStore = create<PreviewState>()(
 			setPreviewQuality: (quality) => {
 				set({
 					previewQuality: quality,
-					// Auto always begins at Full and adapts only while playing.
-					resolvedQuality: quality === "auto" ? "full" : quality,
+					// Auto begins conservatively and promotes after sustained fast renders.
+					resolvedQuality: quality === "auto" ? "half" : quality,
 				});
 			},
 			setResolvedQuality: (quality) => {
@@ -174,7 +174,7 @@ export const usePreviewStore = create<PreviewState>()(
 		}),
 		{
 			name: "preview-settings",
-			version: 7,
+			version: 8,
 			migrate: (persistedState) => {
 				const state = readPersistedPreviewState(persistedState);
 				const quality = getPersistedPreviewQuality(state);
@@ -187,7 +187,7 @@ export const usePreviewStore = create<PreviewState>()(
 						cols: state?.gridConfig?.cols ?? DEFAULT_GRID_CONFIG.cols,
 					},
 					previewQuality: quality,
-					resolvedQuality: quality === "auto" ? "full" : quality,
+					resolvedQuality: quality === "auto" ? "half" : quality,
 				};
 			},
 			partialize: (state) => ({

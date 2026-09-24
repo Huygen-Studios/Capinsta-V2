@@ -22,6 +22,9 @@ export class PlaybackManager {
 	private playbackStartWallTime = 0;
 	private playbackStartTime: MediaTime = ZERO_MEDIA_TIME;
 	private timelineScopeBound = false;
+	private playRequestId = 0;
+	private beforePlay: ((time: MediaTime) => Promise<void>) | null = null;
+	private masterClock: (() => MediaTime | null) | null = null;
 
 	constructor(private editor: EditorCore) {}
 
@@ -40,6 +43,11 @@ export class PlaybackManager {
 	}
 
 	play(): void {
+		void this.beginPlayback();
+	}
+
+	private async beginPlayback(): Promise<void> {
+		if (this.isPlaying) return;
 		const maxTime = this.editor.timeline.getTotalDuration();
 		if (maxTime <= 0) {
 			return;
@@ -49,15 +57,42 @@ export class PlaybackManager {
 			this.seek({ time: ZERO_MEDIA_TIME });
 		}
 
+		const requestId = ++this.playRequestId;
+		if (this.beforePlay) {
+			try {
+				await this.beforePlay(this.currentTime);
+			} catch (error) {
+				if (process.env.NEXT_PUBLIC_CAPINSTA_DEBUG === "true") {
+					console.warn("[transport] Audio preparation failed; using monotonic clock", error);
+				}
+			}
+		}
+		if (requestId !== this.playRequestId || this.isPlaying) return;
 		this.isPlaying = true;
 		this.startTimer();
 		this.notify();
 	}
 
 	pause(): void {
+		this.playRequestId += 1;
+		if (this.isPlaying) {
+			const clockTime = this.masterClock?.() ?? null;
+			if (clockTime !== null) this.currentTime = this.clampTimeToTimeline(clockTime);
+		}
 		this.isPlaying = false;
 		this.stopTimer();
 		this.notify();
+	}
+
+	onBeforePlay(listener: (time: MediaTime) => Promise<void>): () => void {
+		this.beforePlay = listener;
+		return () => {
+			if (this.beforePlay === listener) this.beforePlay = null;
+		};
+	}
+
+	setMasterClock(clock: (() => MediaTime | null) | null): void {
+		this.masterClock = clock;
 	}
 
 	toggle(): void {
@@ -214,12 +249,14 @@ export class PlaybackManager {
 		if (!this.isPlaying) return;
 
 		const fps = this.editor.project.getActive()?.settings.fps;
-		const elapsedSeconds =
-			(performance.now() - this.playbackStartWallTime) / 1000;
-		const rawTime = addMediaTime({
-			a: this.playbackStartTime,
-			b: mediaTimeFromSeconds({ seconds: elapsedSeconds }),
-		});
+		const clockTime = this.masterClock?.() ?? null;
+		const elapsedSeconds = (performance.now() - this.playbackStartWallTime) / 1000;
+		const rawTime =
+			clockTime ??
+			addMediaTime({
+				a: this.playbackStartTime,
+				b: mediaTimeFromSeconds({ seconds: elapsedSeconds }),
+			});
 		const newTime = fps ? roundFrameTime({ time: rawTime, fps }) : rawTime;
 		const maxTime = this.editor.timeline.getTotalDuration();
 
@@ -243,13 +280,13 @@ export class PlaybackManager {
 		return clampMediaTime({ time, min: ZERO_MEDIA_TIME, max: maxTime });
 	}
 
-	private dispatchSeekEvent(time: MediaTime): void {
+	private dispatchSeekEvent(_time: MediaTime): void {
 		if (typeof window === "undefined") {
 			return;
 		}
 	}
 
-	private dispatchUpdateEvent(time: MediaTime): void {
+	private dispatchUpdateEvent(_time: MediaTime): void {
 		if (typeof window === "undefined") {
 			return;
 		}

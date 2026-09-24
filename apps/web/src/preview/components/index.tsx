@@ -31,6 +31,7 @@ import {
 	computePreviewDimensions,
 } from "@/preview/preview-store";
 import { useAutoPreviewQuality } from "@/preview/hooks/use-auto-preview-quality";
+import { updatePreviewSyncDiagnostics } from "@/preview/sync-diagnostics";
 import { EditorHelpButton } from "@/components/editor/editor-help-button";
 import { EDITOR_HELP_CONTENT } from "@/components/editor/editor-help-content";
 
@@ -210,6 +211,10 @@ function PreviewCanvas({
 	const lastFrameRef = useRef(-1);
 	const lastSceneRef = useRef<RootNode | null>(null);
 	const renderingRef = useRef(false);
+	const pendingLatestRenderRef = useRef(false);
+	const renderGenerationRef = useRef(0);
+	const droppedFramesRef = useRef(0);
+	const renderLatestRef = useRef<() => void>(() => undefined);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
 	const editor = useEditor();
@@ -227,7 +232,21 @@ function PreviewCanvas({
 	// Preview quality: read the resolved quality and compute scaled dimensions.
 	// The visible size stays the same — only the internal render resolution changes.
 	const resolvedQuality = usePreviewStore((s) => s.resolvedQuality);
-	const previewScale = PREVIEW_QUALITY_SCALE[resolvedQuality];
+	const previewQuality = usePreviewStore((s) => s.previewQuality);
+	const displayScale = Math.min(
+		1,
+		Math.max(
+			0.25,
+			Math.min(
+				(viewport.sceneWidth * (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1) * 1.2) / nativeWidth,
+				(viewport.sceneHeight * (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1) * 1.2) / nativeHeight,
+			),
+		),
+	);
+	const previewScale =
+		previewQuality === "auto"
+			? Math.min(PREVIEW_QUALITY_SCALE[resolvedQuality], displayScale)
+			: PREVIEW_QUALITY_SCALE[resolvedQuality];
 	const isPlaying = useEditor((e) => e.playback.getIsPlaying());
 	const { recordFrameRender } = useAutoPreviewQuality({ isPlaying });
 
@@ -271,6 +290,12 @@ function PreviewCanvas({
 		});
 	}, [previewWidth, previewHeight, previewScale, activeProject.settings.fps]);
 
+	useEffect(() => {
+		renderGenerationRef.current += 1;
+		pendingLatestRenderRef.current = true;
+		lastFrameRef.current = -1;
+	}, [renderer, renderTree]);
+
 	// Mount the compositor's output canvas directly into the preview.
 	// CSS upscales the lower-resolution canvas to fill the same visible area.
 	useEffect(() => {
@@ -291,12 +316,26 @@ function PreviewCanvas({
 	}, [renderer, previewScale]);
 
 	const render = useCallback(() => {
-		if (!renderTree || renderingRef.current) return;
+		if (!renderTree) return;
+		if (renderingRef.current) {
+			pendingLatestRenderRef.current = true;
+			droppedFramesRef.current += 1;
+			return;
+		}
 
 		const renderTime = Math.min(
 			editor.playback.getCurrentTime(),
 			editor.timeline.getLastFrameTime(),
 		);
+		updatePreviewSyncDiagnostics({
+			transportTime: renderTime / TICKS_PER_SECOND,
+			requestedVideoTime: renderTime / TICKS_PER_SECOND,
+			playheadTime: renderTime / TICKS_PER_SECOND,
+			pendingFrameCount: pendingLatestRenderRef.current ? 1 : 0,
+			droppedPreviewFrames: droppedFramesRef.current,
+			previewResolution: { width: previewWidth, height: previewHeight },
+			resolvedPreviewQuality: resolvedQuality,
+		});
 		const ticksPerFrame = Math.round(
 			(TICKS_PER_SECOND * renderer.fps.denominator) / renderer.fps.numerator,
 		);
@@ -307,7 +346,9 @@ function PreviewCanvas({
 		}
 
 		const sceneChanged = renderTree !== lastSceneRef.current;
+		const generation = renderGenerationRef.current;
 		renderingRef.current = true;
+		pendingLatestRenderRef.current = false;
 		lastSceneRef.current = renderTree;
 		const renderStart = performance.now();
 		renderer
@@ -316,8 +357,16 @@ function PreviewCanvas({
 				if (sceneChanged) {
 					await kickWebGpuPresentation();
 				}
-				lastFrameRef.current = frame;
-				recordFrameRender(performance.now() - renderStart);
+				if (generation === renderGenerationRef.current) {
+					lastFrameRef.current = frame;
+					const renderDurationMs = performance.now() - renderStart;
+					recordFrameRender(renderDurationMs);
+					updatePreviewSyncDiagnostics({
+						renderedVideoTime: renderTime / TICKS_PER_SECOND,
+						captionTime: renderTime / TICKS_PER_SECOND,
+						renderDurationMs,
+					});
+				}
 			})
 			.catch((error) => {
 				lastFrameRef.current = -1;
@@ -332,6 +381,12 @@ function PreviewCanvas({
 			})
 			.finally(() => {
 				renderingRef.current = false;
+				// The RAF loop immediately consumes the newest transport timestamp.
+				// Intermediate requests are deliberately coalesced, never queued.
+				if (pendingLatestRenderRef.current) {
+					lastFrameRef.current = -1;
+					queueMicrotask(() => renderLatestRef.current());
+				}
 			});
 	}, [
 		renderer,
@@ -339,7 +394,13 @@ function PreviewCanvas({
 		editor.playback,
 		editor.timeline,
 		recordFrameRender,
+		previewWidth,
+		previewHeight,
+		resolvedQuality,
 	]);
+	useEffect(() => {
+		renderLatestRef.current = render;
+	}, [render]);
 
 	useRafLoop(render);
 

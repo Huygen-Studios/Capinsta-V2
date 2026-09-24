@@ -33,6 +33,7 @@ import {
 import { getPaperFoldManifest } from "@/effects/paper-fold/assets";
 import { resolvePaperFoldTiming } from "@/effects/paper-fold/timing";
 import type { TimelineElement } from "@/timeline";
+import { updatePreviewSyncDiagnostics } from "@/preview/sync-diagnostics";
 
 declare global {
 	interface Window {
@@ -178,6 +179,7 @@ export function CapinstaActiveCaptionOverlay({
 
 	const timeSeconds =
 		renderTimeSeconds ?? mediaTimeToSeconds({ time: currentTime });
+	updatePreviewSyncDiagnostics({ captionTime: timeSeconds });
 	const captionViewport = useMemo(
 		() => ({ width: canvasWidth, height: canvasHeight }),
 		[canvasWidth, canvasHeight],

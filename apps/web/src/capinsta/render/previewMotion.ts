@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { CapinstaCaptionStyleV1 } from "../styles/styleTypes";
+import { CAPTION_MOTION_TIMEBASE_FPS } from "./captionMotion";
 
 export function easeInOutCubic(t: number): number {
 	const clamped = Math.max(0, Math.min(1, t));
@@ -168,7 +169,7 @@ export function getCapinstaActiveWordEffectStyle({
 	wordStart,
 	activeStyle,
 	style,
-	fps = 30,
+	fps: _fps = CAPTION_MOTION_TIMEBASE_FPS,
 }: {
 	effect: string;
 	strength: number;
@@ -180,7 +181,7 @@ export function getCapinstaActiveWordEffectStyle({
 }): CSSProperties {
 	const age = Math.max(0, timeSeconds - wordStart);
 	const originalTransform = style
-		? activeWordTransform({ ageFrames: age * fps, style })
+		? activeWordTransform({ ageFrames: age * CAPTION_MOTION_TIMEBASE_FPS, style })
 		: undefined;
 	const pulse = Math.max(0, 1 - age * 8);
 	if (effect === "bounce") {

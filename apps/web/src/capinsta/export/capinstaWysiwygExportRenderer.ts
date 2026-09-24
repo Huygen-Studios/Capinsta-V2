@@ -10,6 +10,12 @@ import {
 } from "../original/captionLayoutSafety";
 import type { AlignedWord, CaptionStyleConfig } from "../original/types";
 import { createCapinstaRenderModelFromExportData } from "../render/capinstaRenderModel";
+import {
+	classifyDynamicPunchWord,
+	classifyMrBeastWord,
+	resolveSpecializedWordMotion,
+	stableCaptionWordHash,
+} from "../render/captionMotion";
 
 interface ExportAlignedWord extends AlignedWord {
 	id: string;
@@ -198,28 +204,25 @@ function setShadowFromConfig({
 
 function wordFillColor({
 	word,
+	index,
+	captionId,
 	active,
 	config,
 	presetId,
 }: {
 	word: ExportAlignedWord;
+	index: number;
+	captionId: string;
 	active: boolean;
 	config: CaptionStyleConfig;
 	presetId: string;
 }) {
 	const defaultColor = config.textColor || "#ffffff";
+	if (presetId === "mrbeast_style") return classifyMrBeastWord(tokenText(word), config);
+	if (presetId === "dynamic_punch") {
+		return classifyDynamicPunchWord({ word: tokenText(word), index, captionId, config });
+	}
 	if (active) return config.activeWordColor || defaultColor;
-	if (presetId !== "mrbeast_style" || !config.smartHighlightEnabled) {
-		return defaultColor;
-	}
-	const clean = tokenText(word).toLowerCase().replace(/[^a-z0-9]/g, "");
-	const money = new Set(["money", "cash", "dollar", "rupee", "lakh", "crore", "win", "winning", "prize", "loss", "profit"]);
-	const danger = new Set(["fail", "failed", "lose", "lost", "loss", "wrong", "bad", "stop"]);
-	const growth = new Set(["grow", "growth", "viral", "million", "10000", "100000", "success"]);
-	if (danger.has(clean)) return config.emphasisRedColor || defaultColor;
-	if (money.has(clean) || growth.has(clean)) {
-		return config.emphasisYellowColor || config.activeWordColor || defaultColor;
-	}
 	return defaultColor;
 }
 
@@ -268,6 +271,8 @@ function drawInlinePresetCaption({
 	const safeWords = words.length ? words : allWords.slice(0, 1);
 	const lineHeight = fontSize * config.lineHeight;
 	const rowGap = fontSize * 0.08;
+	const captionStart = Math.min(...allWords.map((word) => word.start));
+	const captionEnd = Math.max(...allWords.map((word) => word.end));
 
 	ctx.save();
 	ctx.font = `${config.fontWeight} ${fontSize}px ${resolveFontFamily(config.fontFamily)}, sans-serif`;
@@ -300,55 +305,58 @@ function drawInlinePresetCaption({
 
 		for (const word of line) {
 			const text = tokenText(word);
+			const wordIndex = allWords.indexOf(word);
 			const active = activeIds.has(word.id);
 			const wordWidth = ctx.measureText(text).width;
-			const age = Math.max(0, timeSeconds - word.start);
-			const reveal = Math.min(1, age / Math.max(0.08, config.revealDuration || 0.18));
-			const activeScale =
-				active && (strategy === "attention_punch" || strategy === "mrbeast_style")
-					? config.activeWordScale
-					: 1;
-			const alpha =
-				strategy === "apple_cinematic" || strategy === "kinetic_fade"
-					? reveal
-					: timeSeconds >= word.start
-						? 1
-						: 0;
-			const yOffset =
-				strategy === "apple_cinematic"
-					? (1 - reveal) * Math.max(0, config.revealYOffset ?? 0)
-					: strategy === "kinetic_fade"
-						? (1 - reveal) * 10
-						: active
-							? -2 * scale
-							: 0;
+			const motion = resolveSpecializedWordMotion({
+				strategy,
+				timeSeconds,
+				wordStart: word.start,
+				captionStart,
+				captionEnd,
+				active,
+				config,
+			});
 
 			ctx.save();
-			ctx.globalAlpha = alpha;
-			if (strategy === "mrbeast_style" && config.randomTiltEnabled) {
-				const tilt = ((stableWordHash(text) % 7) - 3) * 0.7;
-				ctx.translate(x + wordWidth / 2, y + yOffset);
+			ctx.globalAlpha = motion.opacity;
+			ctx.filter = motion.blur > 0 ? `blur(${motion.blur}px)` : "none";
+			const fillStyle = wordFillColor({
+				word,
+				index: wordIndex,
+				captionId: renderData.clipId,
+				active,
+				config,
+				presetId: strategy,
+			});
+			const dynamicEmphasis = strategy === "dynamic_punch" && fillStyle !== (config.textColor || "#FFFFFF");
+			if ((strategy === "mrbeast_style" && config.randomTiltEnabled) || (dynamicEmphasis && config.randomTiltEnabled !== false)) {
+				const tiltHash = strategy === "dynamic_punch"
+					? stableCaptionWordHash(`dp-tilt-${renderData.clipId}-${text}-${wordIndex}`)
+					: stableCaptionWordHash(`${renderData.clipId}-${text}-${wordIndex}`);
+				const tilt = (tiltHash % 61) / 10 - 3;
+				ctx.translate(x + wordWidth / 2, y + motion.translateY);
 				ctx.rotate((tilt * Math.PI) / 180);
-				ctx.scale(activeScale, activeScale);
+				ctx.scale(motion.scale, motion.scale);
 				drawTextWithOptionalStroke({
 					ctx,
 					text,
 					x: -wordWidth / 2,
 					y: 0,
 					config,
-					fillStyle: wordFillColor({ word, active, config, presetId: strategy }),
+					fillStyle,
 					scale,
 				});
 			} else {
-				ctx.translate(x + wordWidth / 2, y + yOffset);
-				ctx.scale(activeScale, activeScale);
+				ctx.translate(x + wordWidth / 2, y + motion.translateY);
+				ctx.scale(motion.scale, motion.scale);
 				drawTextWithOptionalStroke({
 					ctx,
 					text,
 					x: -wordWidth / 2,
 					y: 0,
 					config,
-					fillStyle: wordFillColor({ word, active, config, presetId: strategy }),
+					fillStyle,
 					scale,
 				});
 			}
@@ -380,15 +388,6 @@ function drawInlinePresetCaption({
 			},
 		},
 	};
-}
-
-function stableWordHash(value: string) {
-	let hash = 0;
-	for (let index = 0; index < value.length; index += 1) {
-		hash = (hash << 5) - hash + value.charCodeAt(index);
-		hash |= 0;
-	}
-	return Math.abs(hash);
 }
 
 function drawEditorialLockupCaption({

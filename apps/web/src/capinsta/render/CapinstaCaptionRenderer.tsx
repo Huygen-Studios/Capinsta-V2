@@ -89,7 +89,7 @@ export const CapinstaCaptionRenderer = memo(function CapinstaCaptionRenderer({
 		<OriginalCaptionRenderer
 			captions={captions}
 			currentTime={timeSeconds}
-			fps={renderMode === "export" ? Math.max(1, fps ?? 30) : isPlaying ? 12 : 30}
+			fps={Math.max(1, fps ?? 30)}
 			scale={1}
 			transition={resolveCaptionTransition({
 				renderMode,

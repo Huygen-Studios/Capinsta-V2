@@ -10,6 +10,7 @@ import {
 } from "./captionLayoutSafety";
 import { normalizeCaptionStyleConfig, resolveFontFamily } from "./captionStyleConfig";
 import { getActiveWordIndex, getRenderableCaptionWords, getWordDisplayText, wordActivationProgressFrames } from "./captionUtils";
+import { CAPTION_MOTION_TIMEBASE_FPS } from "../render/captionMotion";
 
 interface Props {
   caption: Caption;
@@ -26,8 +27,8 @@ function interpolate(input: number, inMin: number, inMax: number, outMin: number
   return outMin + (outMax - outMin) * t;
 }
 
-function activeWordTransform(word: AlignedWord, currentTime: number, fps: number) {
-  const ageFrames = wordActivationProgressFrames(word, currentTime, fps);
+function activeWordTransform(word: AlignedWord, currentTime: number, _fps: number) {
+  const ageFrames = wordActivationProgressFrames(word, currentTime, CAPTION_MOTION_TIMEBASE_FPS);
   let scale = 1;
   let y = 0;
 
@@ -72,11 +73,11 @@ function wordMotionTransform(ageFrames: number, config: CaptionStyleConfig) {
   return "translateY(0) scale(1)";
 }
 
-function wordEntranceStyle(wordStart: number, currentTime: number, fps: number, config: CaptionStyleConfig) {
+function wordEntranceStyle(wordStart: number, currentTime: number, _fps: number, config: CaptionStyleConfig) {
   if (currentTime < wordStart) return { opacity: 0, transform: "translateY(0) scale(1)" };
   if (config.entranceAnimation === "none") return { opacity: 1, transform: "translateY(0) scale(1)" };
 
-  const ageFrames = Math.max(0, (currentTime - wordStart) * fps);
+  const ageFrames = Math.max(0, (currentTime - wordStart) * CAPTION_MOTION_TIMEBASE_FPS);
   const duration = Math.max(2, Math.round(8 / Math.max(0.4, config.animationSpeed)));
   const progress = Math.max(0, Math.min(1, ageFrames / duration));
 
@@ -163,7 +164,7 @@ export default function ViralWordHighlightCaption({
                 })(),
                 transform: (() => {
                   const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
-                  const ageFrames = wordActivationProgressFrames(word, currentTime, fps);
+                  const ageFrames = wordActivationProgressFrames(word, currentTime, CAPTION_MOTION_TIMEBASE_FPS);
                   const active = isActive ? activeWordTransform(word, currentTime, fps) : "translateY(0) scale(1)";
                   const motion = wordMotionTransform(ageFrames, config);
                   return combineTransforms(entrance.transform, motion, active);

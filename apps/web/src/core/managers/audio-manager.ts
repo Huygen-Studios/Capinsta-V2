@@ -1,5 +1,5 @@
 import type { EditorCore } from "@/core";
-import { TICKS_PER_SECOND } from "@/wasm";
+import { mediaTimeFromSeconds, type MediaTime, TICKS_PER_SECOND } from "@/wasm";
 import { clampRetimeRate, shouldMaintainPitch } from "@/retime/rate";
 import type { AudioClipSource } from "@/media/audio";
 import { createAudioContext, collectAudioClips } from "@/media/audio";
@@ -20,6 +20,7 @@ import {
 	Input,
 	type WrappedAudioBuffer,
 } from "mediabunny";
+import { updatePreviewSyncDiagnostics } from "@/preview/sync-diagnostics";
 
 export class AudioManager {
 	private audioContext: AudioContext | null = null;
@@ -44,6 +45,7 @@ export class AudioManager {
 	private lastIsPlaying = false;
 	private lastVolume = 1;
 	private playbackLatencyCompensationSeconds = 0;
+	private preparedForPlay = false;
 	private readonly streamBufferAheadSeconds = 2.5;
 	private readonly streamResumeAheadSeconds = 1.75;
 	private unsubscribers: Array<() => void> = [];
@@ -52,14 +54,17 @@ export class AudioManager {
 		this.lastVolume = this.editor.playback.getVolume();
 
 		this.unsubscribers.push(
+			this.editor.playback.onBeforePlay(this.prepareForPlay),
 			this.editor.playback.subscribe(this.handlePlaybackChange),
 			this.editor.timeline.subscribe(this.handleTimelineChange),
 			this.editor.media.subscribe(this.handleTimelineChange),
 			this.editor.playback.onSeek(this.handleSeek),
 		);
+		this.editor.playback.setMasterClock(this.getMasterClockTime);
 	}
 
 	dispose(): void {
+		this.editor.playback.setMasterClock(null);
 		this.stopPlayback();
 		for (const unsub of this.unsubscribers) {
 			unsub();
@@ -87,13 +92,34 @@ export class AudioManager {
 		if (isPlaying !== this.lastIsPlaying) {
 			this.lastIsPlaying = isPlaying;
 			if (isPlaying) {
-				void this.startPlayback({
-					time: this.editor.playback.getCurrentTime() / TICKS_PER_SECOND,
-				});
+				if (this.preparedForPlay) {
+					this.preparedForPlay = false;
+					this.startScheduling();
+				} else {
+					void this.startPlayback({
+						time: this.editor.playback.getCurrentTime() / TICKS_PER_SECOND,
+					});
+				}
 			} else {
 				this.stopPlayback();
 			}
 		}
+	};
+
+	private getMasterClockTime = (): MediaTime | null => {
+		if (!this.audioContext || (!this.lastIsPlaying && !this.preparedForPlay)) {
+			return null;
+		}
+		const seconds = this.getPlaybackTime();
+		updatePreviewSyncDiagnostics({ audioTime: seconds });
+		return mediaTimeFromSeconds({ seconds });
+	};
+
+	private prepareForPlay = async (time: MediaTime): Promise<void> => {
+		await this.startPlayback({
+			time: time / TICKS_PER_SECOND,
+			preparing: true,
+		});
 	};
 
 	private handleSeek = (time: number): void => {
@@ -103,6 +129,10 @@ export class AudioManager {
 		}
 
 		if (this.editor.playback.getIsPlaying()) {
+			if (this.audioContext) {
+				this.playbackStartTime = time / TICKS_PER_SECOND;
+				this.playbackStartContextTime = this.audioContext.currentTime;
+			}
 			void this.startPlayback({ time: time / TICKS_PER_SECOND });
 			return;
 		}
@@ -148,7 +178,13 @@ export class AudioManager {
 		return this.playbackStartTime + elapsed;
 	}
 
-	private async startPlayback({ time }: { time: number }): Promise<void> {
+	private async startPlayback({
+		time,
+		preparing = false,
+	}: {
+		time: number;
+		preparing?: boolean;
+	}): Promise<void> {
 		const audioContext = this.ensureAudioContext();
 		if (!audioContext) return;
 
@@ -165,13 +201,36 @@ export class AudioManager {
 		if (audioContext.state === "suspended") {
 			await audioContext.resume();
 		}
-
-		this.clips = await collectAudioClips({ tracks, mediaAssets });
-		if (!this.editor.playback.getIsPlaying()) return;
-
 		this.playbackStartTime = time;
 		this.playbackStartContextTime = audioContext.currentTime;
 
+		this.clips = await collectAudioClips({ tracks, mediaAssets });
+		if (!this.editor.playback.getIsPlaying() && !preparing) return;
+
+		if (preparing) {
+			const firstUpcoming = this.clips.find(
+				(clip) =>
+					!clip.muted &&
+					clip.startTime + clip.duration > time &&
+					clip.startTime <= time + this.lookaheadSeconds,
+			);
+			if (firstUpcoming) {
+				if (this.shouldUsePreparedClipBuffer({ clip: firstUpcoming })) {
+					await this.getPreparedClipBuffer({ clip: firstUpcoming });
+				} else {
+					await this.getAudioSink({ clip: firstUpcoming });
+				}
+			}
+			this.playbackStartTime = time;
+			this.playbackStartContextTime = audioContext.currentTime;
+			this.preparedForPlay = true;
+			return;
+		}
+
+		this.startScheduling();
+	}
+
+	private startScheduling(): void {
 		this.scheduleUpcomingClips();
 
 		if (typeof window !== "undefined") {

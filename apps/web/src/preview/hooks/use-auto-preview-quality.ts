@@ -2,8 +2,9 @@ import { useCallback, useRef } from "react";
 import { usePreviewStore, type ResolvedPreviewQuality } from "@/preview/preview-store";
 
 const SLOW_FRAME_MS = 42;
-const FAST_FRAME_MS = 24;
+const FAST_FRAME_MS = 18;
 const SAMPLE_SIZE = 20;
+const QUALITY_CHANGE_COOLDOWN_MS = 3000;
 
 function downgrade(quality: ResolvedPreviewQuality): ResolvedPreviewQuality {
 	if (quality === "full") return "half";
@@ -22,6 +23,7 @@ export function useAutoPreviewQuality({ isPlaying }: { isPlaying: boolean }) {
 	const resolvedQuality = usePreviewStore((state) => state.resolvedQuality);
 	const setResolvedQuality = usePreviewStore((state) => state.setResolvedQuality);
 	const samplesRef = useRef<number[]>([]);
+	const lastChangeRef = useRef(0);
 
 	const recordFrameRender = useCallback(
 		(durationMs: number) => {
@@ -33,11 +35,15 @@ export function useAutoPreviewQuality({ isPlaying }: { isPlaying: boolean }) {
 
 			const average = samples.reduce((sum, value) => sum + value, 0) / samples.length;
 			samplesRef.current = [];
+			const now = performance.now();
+			if (now - lastChangeRef.current < QUALITY_CHANGE_COOLDOWN_MS) return;
 
 			if (average > SLOW_FRAME_MS) {
 				setResolvedQuality(downgrade(resolvedQuality));
+				lastChangeRef.current = now;
 			} else if (average < FAST_FRAME_MS) {
 				setResolvedQuality(upgrade(resolvedQuality));
+				lastChangeRef.current = now;
 			}
 		},
 		[isPlaying, previewQuality, resolvedQuality, setResolvedQuality],

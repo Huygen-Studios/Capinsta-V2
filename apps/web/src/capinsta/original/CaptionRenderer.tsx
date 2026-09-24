@@ -22,6 +22,15 @@ import {
 import { getCaptionDisplayText, getRenderableCaptionWords, getWordDisplayText } from "./captionUtils";
 import ViralWordHighlightCaption from "./ViralWordHighlightCaption";
 import WordHighlightBoxCaption from "./WordHighlightBoxCaption";
+import {
+  entranceMotionTransform,
+  classifyDynamicPunchWord as resolveDynamicPunchWordColor,
+  classifyMrBeastWord as resolveMrBeastWordColor,
+  motionFramesSince,
+  resolveDynamicPunch,
+  resolveEntranceMotion,
+  resolveMrBeastPopScale,
+} from "../render/captionMotion";
 
 interface Props {
   captions: Caption[];
@@ -210,38 +219,16 @@ function wordMotionTransform(ageFrames: number, config: CaptionStyleConfig, isAn
   return "translateY(0) scale(1)";
 }
 
-function wordEntranceStyle(wordStart: number, currentTime: number, fps: number, config: CaptionStyleConfig): React.CSSProperties {
-  if (currentTime < wordStart) return { opacity: 0, transform: "translateY(0) scale(1)" };
-  if (config.entranceAnimation === "none" || config.entranceAnimation === "hard_cut") {
-    return { opacity: 1, transform: "translateY(0) scale(1)", filter: "none" };
-  }
-
-  const ageFrames = Math.max(0, (currentTime - wordStart) * fps);
-  const duration = Math.max(2, Math.round(8 / Math.max(0.4, config.animationSpeed)));
-  const rawProgress = Math.max(0, Math.min(1, ageFrames / duration));
-  const progress = easeInOutCubic(rawProgress);
-
-  if (config.entranceAnimation === "fade") {
-    return { opacity: progress, transform: "translateY(0) scale(1)", filter: "none" };
-  }
-  if (config.entranceAnimation === "pop") {
-    const scale = rawProgress < 0.62
-      ? 0.82 + (1.10 - 0.82) * easeInOutCubic(rawProgress / 0.62)
-      : 1.10 - (1.10 - 1.00) * easeInOutCubic((rawProgress - 0.62) / 0.38);
-    return { opacity: progress, transform: combineTransforms(`translateY(0) scale(${scale.toFixed(4)})`, asymmetricScaleTransform(config, rawProgress)), filter: "none" };
-  }
-  if (config.entranceAnimation === "slide") {
-    return { opacity: progress, transform: `translateY(${(1 - progress) * 16}px) scale(1)`, filter: "none" };
-  }
-  if (config.entranceAnimation === "flip") {
-    return {
-      opacity: progress,
-      transform: `perspective(360px) rotateX(${(1 - progress) * -72}deg) scale(${0.96 + progress * 0.04})`,
-      filter: "none",
-    };
-  }
-
-  return { opacity: 1, transform: "translateY(0) scale(1)" };
+function wordEntranceStyle(wordStart: number, currentTime: number, _fps: number, config: CaptionStyleConfig): React.CSSProperties {
+  const motion = resolveEntranceMotion({ wordStart, timeSeconds: currentTime, config });
+  return {
+    opacity: motion.opacity,
+    transform: combineTransforms(
+      entranceMotionTransform(motion),
+      asymmetricScaleTransform(config, motion.opacity)
+    ),
+    filter: "none",
+  };
 }
 
 function buildTimedWords(activeCaption: Caption): TimedCaptionWord[] {
@@ -266,34 +253,7 @@ function buildTimedWords(activeCaption: Caption): TimedCaptionWord[] {
 }
 
 function classifyMrBeastWord(word: string, config: CaptionStyleConfig) {
-  if (!config.smartHighlightEnabled) return config.textColor;
-  const clean = word.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const money = new Set(["money", "cash", "dollar", "rupee", "lakh", "crore", "win", "winning", "prize"]);
-  const shock = new Set(["today", "now", "fast", "secret", "surprise", "insane", "crazy"]);
-  const danger = new Set(["fail", "mistake", "danger", "lose", "lost", "wrong", "problem"]);
-  if (money.has(clean)) return config.emphasisGreenColor || "#00FF00";
-  if (shock.has(clean)) return config.emphasisYellowColor || "#FFFF00";
-  if (danger.has(clean)) return config.emphasisRedColor || "#FF0000";
-  return config.textColor;
-}
-
-function mrBeastPopScale(ageFrames: number, config: CaptionStyleConfig) {
-  if (ageFrames < 0) return 0;
-  const peak = Math.max(1.02, config.activeWordScale);
-  const undershoot = Math.max(0.9, 1 - config.animationStrength * 0.035);
-  if (ageFrames <= 1.5) {
-    const p = easeInOutCubic(ageFrames / 1.5);
-    return peak * p;
-  }
-  if (ageFrames <= 3.5) {
-    const p = easeInOutCubic((ageFrames - 1.5) / 2);
-    return peak + (undershoot - peak) * p;
-  }
-  if (ageFrames <= 5.5) {
-    const p = easeInOutCubic((ageFrames - 3.5) / 2);
-    return undershoot + (1 - undershoot) * p;
-  }
-  return 1;
+  return resolveMrBeastWordColor(word, config);
 }
 
 function renderMrBeastStyle(
@@ -328,10 +288,9 @@ function renderMrBeastStyle(
         }}
       >
         {words.map((word, index) => {
-          const ageFrames = (currentTime - word.start) * fps;
           const visible = currentTime >= word.start;
           const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
-          const popScale = config.animationType === "none" ? 1 : mrBeastPopScale(ageFrames, config);
+          const popScale = config.animationType === "none" ? 1 : resolveMrBeastPopScale({ timeSeconds: currentTime, wordStart: word.start, config });
           const tiltSeed = stableHash(`${activeCaption.id}-${word.originalWord || word.word}-${index}`);
           const tilt = config.randomTiltEnabled ? (tiltSeed % 61) / 10 - 3 : 0;
           return (
@@ -363,65 +322,8 @@ function renderMrBeastStyle(
   );
 }
 
-function dynamicPunchSpringPop(elapsedMs: number, wordDurationSeconds: number): { scale: number; opacity: number } {
-  if (elapsedMs < 0) return { scale: 0.5, opacity: 0 };
-
-  const wordDurationMs = wordDurationSeconds * 1000;
-  const defaultAnimMs = 120;
-  const animMs = Math.max(30, Math.min(defaultAnimMs, wordDurationMs * 0.65));
-
-  if (elapsedMs >= animMs) {
-    return { scale: 1.0, opacity: 1 };
-  }
-
-  const t = elapsedMs / animMs;
-  const peakT = 0.48;
-
-  if (t <= peakT) {
-    const phaseT = easeInOutCubic(t / peakT);
-    const scale = 0.50 + (1.18 - 0.50) * phaseT;
-    const opacity = Math.min(1, phaseT * 2.5);
-    return { scale, opacity };
-  } else {
-    const phaseT = easeInOutCubic((t - peakT) / (1 - peakT));
-    const scale = 1.18 - (1.18 - 1.00) * phaseT;
-    return { scale, opacity: 1 };
-  }
-}
-
 function classifyDynamicPunchWord(word: string, index: number, captionId: string, config: CaptionStyleConfig) {
-  if (!config.smartHighlightEnabled) return config.textColor || "#FFFFFF";
-  const clean = word.toLowerCase().replace(/[^a-z0-9$%:.]/g, "");
-
-  // 1. Numeric / Time / Currency -> Neon Yellow (#FFFF00)
-  if (/^[₹$€£]?\d+([:.,]\d+)*%?$/i.test(clean) || /\d/.test(clean)) {
-    return config.emphasisYellowColor || "#FFFF00";
-  }
-
-  // 2. Action / Positive emphasis -> Lime Green (#39FF14)
-  const actionWords = new Set(["win", "winning", "go", "run", "fast", "grow", "yes", "free", "best", "boost", "build", "create", "action", "do"]);
-  if (actionWords.has(clean)) {
-    return config.emphasisGreenColor || "#39FF14";
-  }
-
-  // 3. High information / Attention words -> Cyan (#00FFFF)
-  const cyanWords = new Set(["secret", "magic", "insane", "crazy", "huge", "phone", "morning", "night", "check", "wakes", "time", "money", "world", "never", "always", "stop"]);
-  if (cyanWords.has(clean)) {
-    return config.activeWordColor || "#00FFFF";
-  }
-
-  // 4. Deterministic rhythmic emphasis for other content words (~32% probability)
-  const hash = stableHash(`dp-color-${captionId}-${word}-${index}`);
-  const isFunctionWord = new Set(["a", "an", "the", "in", "on", "at", "to", "for", "of", "and", "or", "but", "is", "it", "he", "she", "my", "his", "her"]).has(clean);
-
-  if (!isFunctionWord && hash % 100 < 32) {
-    const colorChoice = hash % 3;
-    if (colorChoice === 0) return config.activeWordColor || "#00FFFF";
-    if (colorChoice === 1) return config.emphasisYellowColor || "#FFFF00";
-    return config.emphasisGreenColor || "#39FF14";
-  }
-
-  return config.textColor || "#FFFFFF";
+  return resolveDynamicPunchWordColor({ word, index, captionId, config });
 }
 
 function renderDynamicPunchStyle(
@@ -470,8 +372,11 @@ function renderDynamicPunchStyle(
         }}
       >
         {words.map((word, index) => {
-          const elapsedMs = Math.max(0, (currentTime - activeCaption.start) * 1000);
-          const { scale: animScale, opacity } = dynamicPunchSpringPop(elapsedMs, captionDuration);
+          const { scale: animScale, opacity } = resolveDynamicPunch({
+            timeSeconds: currentTime,
+            captionStart: activeCaption.start,
+            captionDuration,
+          });
           const color = classifyDynamicPunchWord(word.word, index, activeCaption.id, config);
 
           const isEmphasized = color !== (config.textColor || "#FFFFFF");
@@ -1361,7 +1266,7 @@ function renderKineticWords(
         {tokens.map((word, index) => {
           const progress = Math.max(0, Math.min(1, (currentTime - word.start) / 0.18));
           const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
-          const ageFrames = Math.max(0, (currentTime - word.start) * fps);
+          const ageFrames = Math.max(0, motionFramesSince({ timeSeconds: currentTime, startSeconds: word.start }));
           const motion = wordMotionTransform(ageFrames, config);
           return (
             <span
@@ -1415,7 +1320,7 @@ function renderAttentionPunch(
           const active = index === activeIndex;
           const spoken = currentTime >= word.start;
           const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
-          const ageFrames = Math.max(0, (currentTime - word.start) * fps);
+          const ageFrames = Math.max(0, motionFramesSince({ timeSeconds: currentTime, startSeconds: word.start }));
           const motion = wordMotionTransform(ageFrames, config);
           const baseShadow = buildConfigTextShadow(config);
           const activeGlow = config.activeWordGlow && active ? `0 0 12px ${config.activeWordColor}` : "";
@@ -1580,7 +1485,7 @@ export default function CaptionRenderer({
           {fallbackWords.map((word, idx) => {
             const isSpoken = currentTime >= word.start;
             const isActive = currentTime >= word.start && currentTime < word.end;
-            const ageFrames = Math.max(0, (currentTime - word.start) * fps);
+            const ageFrames = Math.max(0, motionFramesSince({ timeSeconds: currentTime, startSeconds: word.start }));
             const motion = wordMotionTransform(ageFrames, resolvedConfig);
             const entrance = wordEntranceStyle(word.start, currentTime, fps, resolvedConfig);
             return (

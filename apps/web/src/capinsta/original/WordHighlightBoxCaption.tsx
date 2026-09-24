@@ -16,6 +16,7 @@ import {
   resolveFontFamily,
 } from "./captionStyleConfig";
 import { getActiveWordIndex, getRenderableCaptionWords, getWordDisplayText, wordActivationProgressFrames } from "./captionUtils";
+import { CAPTION_MOTION_TIMEBASE_FPS } from "../render/captionMotion";
 
 interface Props {
   caption: Caption;
@@ -78,8 +79,8 @@ function activeWordTransform(
   return "translateY(0) scale(1)";
 }
 
-function entranceTransform(currentTime: number, captionStart: number, config: CaptionStyleConfig, fps: number) {
-  const ageFrames = Math.max(0, (currentTime - captionStart) * fps);
+function entranceTransform(currentTime: number, captionStart: number, config: CaptionStyleConfig, _fps: number) {
+  const ageFrames = Math.max(0, (currentTime - captionStart) * CAPTION_MOTION_TIMEBASE_FPS);
   const speed = Math.max(0.4, config.animationSpeed);
   const duration = Math.max(2, 8 / speed);
   const progress = Math.max(0, Math.min(1, ageFrames / duration));
@@ -182,7 +183,7 @@ export default function WordHighlightBoxCaption({
             (config.wordEffect === "highlight" || config.wordEffect === "bounce" || config.wordEffect === "pop");
           const highlightBackgroundColor = config.activeWordBackgroundColor;
           const hasActiveBackground = isVisible && isActive && (isHighlightEffect || config.activeWordBackgroundEnabled);
-          const ageFrames = wordActivationProgressFrames(word, currentTime, fps);
+          const ageFrames = wordActivationProgressFrames(word, currentTime, CAPTION_MOTION_TIMEBASE_FPS);
           const glow = config.activeWordGlow && isActive
             ? `0 0 ${Math.round(14 * config.animationStrength)}px ${config.activeWordColor}`
             : "";

@@ -1,8 +1,8 @@
 {
 	"version": 1,
 	"errors": 104,
-	"warnings": 14,
-	"files": 74,
+	"warnings": 12,
+	"files": 73,
 	"rows": [
 		{
 			"file": "src/actions/registry.ts",
@@ -456,25 +456,6 @@
 					"severity": 1,
 					"line": 23,
 					"column": 2
-				}
-			]
-		},
-		{
-			"file": "src/core/managers/playback-manager.ts",
-			"errors": 0,
-			"warnings": 2,
-			"messages": [
-				{
-					"ruleId": "@typescript-eslint/no-unused-vars",
-					"severity": 1,
-					"line": 246,
-					"column": 28
-				},
-				{
-					"ruleId": "@typescript-eslint/no-unused-vars",
-					"severity": 1,
-					"line": 252,
-					"column": 30
 				}
 			]
 		},
