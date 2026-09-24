@@ -1,8 +1,8 @@
 {
 	"version": 1,
-	"errors": 104,
+	"errors": 100,
 	"warnings": 12,
-	"files": 73,
+	"files": 72,
 	"rows": [
 		{
 			"file": "src/actions/registry.ts",
@@ -674,37 +674,6 @@
 					"severity": 2,
 					"line": 477,
 					"column": 3
-				}
-			]
-		},
-		{
-			"file": "src/preview/components/toolbar.tsx",
-			"errors": 4,
-			"warnings": 0,
-			"messages": [
-				{
-					"ruleId": "@typescript-eslint/no-unsafe-type-assertion",
-					"severity": 2,
-					"line": 139,
-					"column": 33
-				},
-				{
-					"ruleId": "@typescript-eslint/no-unsafe-type-assertion",
-					"severity": 2,
-					"line": 161,
-					"column": 11
-				},
-				{
-					"ruleId": "@typescript-eslint/no-unsafe-type-assertion",
-					"severity": 2,
-					"line": 167,
-					"column": 11
-				},
-				{
-					"ruleId": "@typescript-eslint/no-unsafe-type-assertion",
-					"severity": 2,
-					"line": 172,
-					"column": 33
 				}
 			]
 		},

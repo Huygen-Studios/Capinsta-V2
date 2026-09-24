@@ -61,7 +61,9 @@ describe("caption motion", () => {
 			config,
 		});
 		expect(atStart.opacity).toBe(0);
-		expect(atStart.translateY).toBe(10);
+		// The shared preview/export transform combines the 10px kinetic reveal
+		// offset with the 5px per-word entrance offset at the first frame.
+		expect(atStart.translateY).toBe(15);
 	});
 
 	test("dynamic punch settles without depending on sample rate", () => {

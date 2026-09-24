@@ -10,6 +10,7 @@ import {
 
 export class PlaybackManager {
 	private isPlaying = false;
+	private isPreparing = false;
 	private currentTime: MediaTime = ZERO_MEDIA_TIME;
 	private volume = 1;
 	private muted = false;
@@ -47,7 +48,7 @@ export class PlaybackManager {
 	}
 
 	private async beginPlayback(): Promise<void> {
-		if (this.isPlaying) return;
+		if (this.isPlaying || this.isPreparing) return;
 		const maxTime = this.editor.timeline.getTotalDuration();
 		if (maxTime <= 0) {
 			return;
@@ -58,6 +59,8 @@ export class PlaybackManager {
 		}
 
 		const requestId = ++this.playRequestId;
+		this.isPreparing = true;
+		this.notify();
 		if (this.beforePlay) {
 			try {
 				await this.beforePlay(this.currentTime);
@@ -67,7 +70,11 @@ export class PlaybackManager {
 				}
 			}
 		}
-		if (requestId !== this.playRequestId || this.isPlaying) return;
+		this.isPreparing = false;
+		if (requestId !== this.playRequestId || this.isPlaying) {
+			this.notify();
+			return;
+		}
 		this.isPlaying = true;
 		this.startTimer();
 		this.notify();
@@ -75,6 +82,7 @@ export class PlaybackManager {
 
 	pause(): void {
 		this.playRequestId += 1;
+		this.isPreparing = false;
 		if (this.isPlaying) {
 			const clockTime = this.masterClock?.() ?? null;
 			if (clockTime !== null) this.currentTime = this.clampTimeToTimeline(clockTime);
@@ -148,6 +156,10 @@ export class PlaybackManager {
 
 	getIsPlaying(): boolean {
 		return this.isPlaying;
+	}
+
+	getIsPreparing(): boolean {
+		return this.isPreparing;
 	}
 
 	getCurrentTime(): MediaTime {

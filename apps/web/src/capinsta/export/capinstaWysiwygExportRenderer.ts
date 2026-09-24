@@ -3,19 +3,29 @@ import { getWordDisplayText } from "../original/captionUtils";
 import {
 	backgroundRgba,
 	directionalShadow,
+	normalizeModernMinimalistStyleConfig,
 	resolveFontFamily,
 } from "../original/captionStyleConfig";
 import {
 	type CaptionCanvasSize,
+	resolveSafeCaptionLayout,
 } from "../original/captionLayoutSafety";
 import type { AlignedWord, CaptionStyleConfig } from "../original/types";
 import { createCapinstaRenderModelFromExportData } from "../render/capinstaRenderModel";
 import {
 	classifyDynamicPunchWord,
 	classifyMrBeastWord,
+	resolveEntranceMotion,
 	resolveSpecializedWordMotion,
 	stableCaptionWordHash,
 } from "../render/captionMotion";
+import {
+	buildEditorialLockupLayout,
+	buildEditorialRevealWords,
+	normalizeLockupWords,
+	selectEditorialWordGroup,
+	type TimedCaptionWord,
+} from "../original/CaptionRenderer";
 
 interface ExportAlignedWord extends AlignedWord {
 	id: string;
@@ -337,7 +347,7 @@ function drawInlinePresetCaption({
 				const tilt = (tiltHash % 61) / 10 - 3;
 				ctx.translate(x + wordWidth / 2, y + motion.translateY);
 				ctx.rotate((tilt * Math.PI) / 180);
-				ctx.scale(motion.scale, motion.scale);
+				ctx.scale(motion.scale * (motion.scaleX ?? 1), motion.scale * (motion.scaleY ?? 1));
 				drawTextWithOptionalStroke({
 					ctx,
 					text,
@@ -349,7 +359,7 @@ function drawInlinePresetCaption({
 				});
 			} else {
 				ctx.translate(x + wordWidth / 2, y + motion.translateY);
-				ctx.scale(motion.scale, motion.scale);
+				ctx.scale(motion.scale * (motion.scaleX ?? 1), motion.scale * (motion.scaleY ?? 1));
 				drawTextWithOptionalStroke({
 					ctx,
 					text,
@@ -390,7 +400,7 @@ function drawInlinePresetCaption({
 	};
 }
 
-function drawEditorialLockupCaption({
+function paintEditorialLockupFrame({
 	ctx,
 	renderData,
 	activeWordIds,
@@ -409,9 +419,28 @@ function drawEditorialLockupCaption({
 		rendererPath: "rendered_capinsta_wysiwyg",
 		viewport: canvasSize,
 	});
-	const config = model.normalizedStyleConfig;
-	const layout = model.layout;
-	if (!layout) {
+	const config = normalizeModernMinimalistStyleConfig(model.styleConfig);
+	const allWords = buildEditorialRevealWords(
+		normalizeLockupWords(
+			renderData.words.map<TimedCaptionWord>((word) => ({
+				word: word.text,
+				displayedWord: word.text,
+				originalWord: word.text,
+				start: word.start,
+				end: word.end,
+				score: 1,
+			})),
+		),
+		renderData.clipStart,
+		renderData.clipEnd,
+		renderData.words.length > 0,
+	);
+	const wordGroup = selectEditorialWordGroup(
+		allWords,
+		model.originalCaption,
+		timeSeconds,
+	);
+	if (!wordGroup) {
 		return emptyResult({
 			renderData,
 			activeWordIds,
@@ -420,64 +449,75 @@ function drawEditorialLockupCaption({
 			strategy: "modern_minimalist_lockup",
 		});
 	}
-	const visibleWords = toAlignedWords(renderData).filter(
-		(word) => timeSeconds >= word.start,
-	);
-	const words = visibleWords.length ? visibleWords : toAlignedWords(renderData).slice(0, 1);
-	const activeIds = new Set(activeWordIds);
-	const anchor =
-		words.find((word) => activeIds.has(word.id)) ??
-		words.slice().sort((left, right) => tokenText(right).length - tokenText(left).length)[0]!;
-	const support = words.filter((word) => word.id !== anchor.id);
-	const scale = layout.groupScale;
-	const anchorSize = Math.max(
-		layout.fontSize,
-		(config.bigFontSizePx ?? config.fontSize) * scale,
-	);
-	const supportSize = Math.max(
-		12,
-		(config.smallFontSizePx ?? config.fontSize * 0.55) * scale,
+	const words = wordGroup.words;
+	if (!words.some((word) => timeSeconds >= word.start && timeSeconds < wordGroup.end)) {
+		return emptyResult({ renderData, activeWordIds, config, model, strategy: "modern_minimalist_lockup" });
+	}
+	const layout = resolveSafeCaptionLayout(config, {
+		canvas: canvasSize,
+		previewScale: 1,
+		words,
+		text: words.map((word) => word.word).join(" "),
+		safety: {
+			maxWidthPercent: 86,
+			maxHeightPercent: 45,
+			safeMarginPercent: 8,
+			defaultFontSize: 112,
+			minFontSize: 18,
+			maxFontSize: 132,
+			defaultScale: 1,
+			minScale: 0,
+			maxScale: 4,
+			lineClamp: 2,
+			wrapMode: "balanced",
+		},
+	});
+	const lockup = buildEditorialLockupLayout(
+		words,
+		model.originalCaption,
+		config,
+		layout,
+		canvasSize,
+		1,
+		wordGroup.groupIndex,
 	);
 	const centerX = (layout.xPercent / 100) * canvasSize.width;
 	const centerY = (layout.yPercent / 100) * canvasSize.height;
-	const maxWidth = (canvasSize.width * layout.widthPercent) / 100;
-	const anchorText = tokenText(anchor);
-	const supportText = support.map(tokenText).filter(Boolean).join(" ");
+	const groupScale = layout.groupScale;
+	const activeIndex = words.findIndex(
+		(word) => timeSeconds >= word.start && timeSeconds < word.end,
+	);
 
 	ctx.save();
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	setShadowFromConfig({ ctx, config, scale });
+	ctx.translate(centerX, centerY);
+	if (config.rotation) ctx.rotate((config.rotation * Math.PI) / 180);
+	ctx.scale(groupScale, groupScale);
+	ctx.translate(-lockup.width / 2, -lockup.height / 2);
+	setShadowFromConfig({ ctx, config, scale: 1 });
 
-	ctx.font = `${config.fontWeight} ${anchorSize}px ${resolveFontFamily(config.bigFontFamily || config.fontFamily)}, sans-serif`;
-	const anchorWidth = Math.min(maxWidth, ctx.measureText(anchorText).width);
-	ctx.save();
-	const anchorAge = Math.max(0, timeSeconds - anchor.start);
-	const anchorReveal = Math.min(1, anchorAge / Math.max(0.08, config.revealDuration || 0.16));
-	ctx.globalAlpha = anchorReveal;
-	drawTextWithOptionalStroke({
-		ctx,
-		text: anchorText,
-		x: centerX + maxWidth * 0.08,
-		y: centerY - supportSize * 0.15,
-		config,
-		fillStyle: activeIds.has(anchor.id) ? config.activeWordColor : config.textColor,
-		scale,
-	});
-	ctx.restore();
-
-	if (supportText) {
-		ctx.font = `${config.fontWeight} ${supportSize}px ${resolveFontFamily(config.smallFontFamily || config.fontFamily)}, sans-serif`;
+	for (const placement of lockup.placements) {
+		const word = words[placement.index];
+		if (!word || timeSeconds < word.start || timeSeconds >= wordGroup.end) continue;
+		const motion = resolveEntranceMotion({
+			wordStart: word.start,
+			timeSeconds,
+			config,
+		});
 		ctx.save();
-		ctx.globalAlpha = 1;
+		ctx.globalAlpha = motion.opacity;
+		ctx.translate(placement.x, placement.y + motion.translateY);
+		ctx.scale(motion.scale, motion.scale);
+		ctx.font = `${config.fontWeight} ${placement.fontSize}px ${resolveFontFamily(placement.isAnchor ? config.bigFontFamily || config.fontFamily : config.smallFontFamily || config.fontFamily)}, sans-serif`;
 		drawTextWithOptionalStroke({
 			ctx,
-			text: supportText,
-			x: centerX - maxWidth * 0.12,
-			y: centerY + anchorSize * 0.48,
+			text: word.word,
+			x: 0,
+			y: 0,
 			config,
-			fillStyle: config.textColor,
-			scale,
+			fillStyle: placement.index === activeIndex ? config.activeWordColor : config.textColor,
+			scale: 1,
 		});
 		ctx.restore();
 	}
@@ -492,16 +532,16 @@ function drawEditorialLockupCaption({
 			presetId: renderData.captionStyle.presetId,
 			activeWordIds,
 			activeWordColor: config.activeWordColor,
-			fontSize: anchorSize,
+			fontSize: Math.max(...lockup.placements.map((placement) => placement.fontSize)),
 			box: {
-				x: centerX - maxWidth / 2,
-				y: centerY - anchorSize,
-				width: Math.max(anchorWidth, maxWidth * 0.45),
-				height: anchorSize + supportSize * 1.6,
+				x: centerX - (lockup.width * groupScale) / 2,
+				y: centerY - (lockup.height * groupScale) / 2,
+				width: lockup.width * groupScale,
+				height: lockup.height * groupScale,
 			},
 			manifest: {
 				...model.manifest,
-				finalFontSize: anchorSize,
+				finalFontSize: Math.max(...lockup.placements.map((placement) => placement.fontSize)),
 				finalPosition: { xPercent: layout.xPercent, yPercent: layout.yPercent },
 				finalBackgroundBox: {
 					widthPercent: layout.widthPercent,
@@ -720,26 +760,65 @@ function drawWordHighlightBoxCaption({
 	};
 }
 
-export function renderCapinstaWysiwygExportCaption({
-	ctx,
+export interface ResolvedCapinstaCaptionFrame {
+	visible: boolean;
+	clipId: string;
+	presetId: string;
+	clipStart: number;
+	clipEnd: number;
+	timeSeconds: number;
+	canvasSize: CaptionCanvasSize;
+	activeWordIds: string[];
+	renderData: CapinstaTextRenderData;
+}
+
+export function resolveCapinstaCaptionFrame({
 	renderData,
 	activeWordIds,
 	timeSeconds,
 	canvasSize,
 }: {
-	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 	renderData: CapinstaTextRenderData;
 	activeWordIds: string[];
 	timeSeconds?: number;
 	canvasSize: CaptionCanvasSize;
-}): CapinstaWysiwygExportResult {
+}): ResolvedCapinstaCaptionFrame {
 	const resolvedTimeSeconds =
 		typeof timeSeconds === "number"
 			? timeSeconds
 			: renderData.words.find((word) => activeWordIds.includes(word.id))?.start ??
 				renderData.words[0]?.start ??
-				0;
-	const presetId = renderData.captionStyle.presetId;
+				renderData.clipStart;
+
+	return {
+		visible:
+			resolvedTimeSeconds >= renderData.clipStart &&
+			resolvedTimeSeconds < renderData.clipEnd,
+		clipId: renderData.clipId,
+		presetId: renderData.captionStyle.presetId,
+		clipStart: renderData.clipStart,
+		clipEnd: renderData.clipEnd,
+		timeSeconds: resolvedTimeSeconds,
+		canvasSize: { ...canvasSize },
+		activeWordIds: [...activeWordIds],
+		renderData,
+	};
+}
+
+export function paintCapinstaCaptionFrame({
+	ctx,
+	frame,
+}: {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	frame: ResolvedCapinstaCaptionFrame;
+}): CapinstaWysiwygExportResult {
+	const {
+		renderData,
+		activeWordIds,
+		timeSeconds: resolvedTimeSeconds,
+		canvasSize,
+		presetId,
+	} = frame;
 	if (presetId === "kinetic_fade") {
 		return drawInlinePresetCaption({
 			ctx,
@@ -791,7 +870,7 @@ export function renderCapinstaWysiwygExportCaption({
 		});
 	}
 	if (presetId === "modern_minimalist_lockup") {
-		return drawEditorialLockupCaption({
+		return paintEditorialLockupFrame({
 			ctx,
 			renderData,
 			activeWordIds,
@@ -804,5 +883,30 @@ export function renderCapinstaWysiwygExportCaption({
 		renderData,
 		activeWordIds,
 		canvasSize,
+	});
+}
+
+/** Shared entry point used by both live preview and both export modes. */
+export function renderCapinstaWysiwygExportCaption({
+	ctx,
+	renderData,
+	activeWordIds,
+	timeSeconds,
+	canvasSize,
+}: {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	renderData: CapinstaTextRenderData;
+	activeWordIds: string[];
+	timeSeconds?: number;
+	canvasSize: CaptionCanvasSize;
+}): CapinstaWysiwygExportResult {
+	return paintCapinstaCaptionFrame({
+		ctx,
+		frame: resolveCapinstaCaptionFrame({
+			renderData,
+			activeWordIds,
+			timeSeconds,
+			canvasSize,
+		}),
 	});
 }

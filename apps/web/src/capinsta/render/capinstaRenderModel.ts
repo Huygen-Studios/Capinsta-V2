@@ -253,14 +253,8 @@ export function createCapinstaRenderModelFromExportData({
 	skippedOpenCutTextIds?: string[];
 	skippedCapinstaTrackIds?: string[];
 }): CapinstaRenderModel {
-	const firstWordStart =
-		renderData.words.length > 0
-			? Math.min(...renderData.words.map((word) => word.start))
-			: 0;
-	const lastWordEnd =
-		renderData.words.length > 0
-			? Math.max(...renderData.words.map((word) => word.end))
-			: 0;
+	const clipStart = renderData.clipStart;
+	const clipEnd = renderData.clipEnd;
 	const document: NeutralCaptionDocument = {
 		id: renderData.documentId,
 		trackId: "capinsta-export",
@@ -270,7 +264,7 @@ export function createCapinstaRenderModelFromExportData({
 			sourceAssetName: "Capinsta export",
 			provider: "capinsta",
 		},
-		durationSeconds: lastWordEnd,
+		durationSeconds: clipEnd,
 		languageMode: "auto_mixed_indian",
 		stylePresetId: renderData.captionStyle.presetId,
 		style: renderData.captionStyle,
@@ -279,8 +273,8 @@ export function createCapinstaRenderModelFromExportData({
 				id: renderData.clipId,
 				trackId: "capinsta-export",
 				text: renderData.clipText,
-				start: firstWordStart,
-				end: lastWordEnd,
+				start: clipStart,
+				end: clipEnd,
 				wordIds: [...renderData.wordIds],
 				stylePresetId: renderData.captionStyle.presetId,
 				selected: false,
@@ -305,7 +299,7 @@ export function createCapinstaRenderModelFromExportData({
 		timing: {
 			sourceOfTruth: "words",
 			generatedAt: "1970-01-01T00:00:00.000Z",
-			audioDurationSeconds: lastWordEnd,
+			audioDurationSeconds: clipEnd,
 		},
 	};
 

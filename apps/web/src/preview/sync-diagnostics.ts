@@ -12,6 +12,15 @@ export interface PreviewSyncDiagnostics {
 	droppedPreviewFrames: number;
 	previewResolution: { width: number; height: number };
 	resolvedPreviewQuality: string;
+	audioStrategy: string;
+	audioContextTime: number | null;
+	scheduledStartContextTime: number | null;
+	decodedCacheBytes: number;
+	activeSourceCount: number;
+	bufferAheadSeconds: number;
+	audioUnderflowCount: number;
+	audioDroppedSampleCount: number;
+	audioDroppedBufferCount: number;
 }
 
 const diagnostics: PreviewSyncDiagnostics = {
@@ -28,6 +37,15 @@ const diagnostics: PreviewSyncDiagnostics = {
 	droppedPreviewFrames: 0,
 	previewResolution: { width: 0, height: 0 },
 	resolvedPreviewQuality: "unknown",
+	audioStrategy: "none",
+	audioContextTime: null,
+	scheduledStartContextTime: null,
+	decodedCacheBytes: 0,
+	activeSourceCount: 0,
+	bufferAheadSeconds: 0,
+	audioUnderflowCount: 0,
+	audioDroppedSampleCount: 0,
+	audioDroppedBufferCount: 0,
 };
 
 export function updatePreviewSyncDiagnostics(

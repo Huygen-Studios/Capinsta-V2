@@ -58,6 +58,8 @@ describe("Capinsta render model", () => {
 				documentId: record.document.id,
 				clipId: clip.id,
 				clipText: clip.text,
+				clipStart: clip.start,
+				clipEnd: clip.end,
 				renderText: clip.text,
 				wordIds: [...clip.wordIds],
 				words: words.map((word) => ({
@@ -89,5 +91,7 @@ describe("Capinsta render model", () => {
 		expect(exportModel.presetId).toBe(previewModel?.presetId);
 		expect(exportModel.activeWordColor).toBe(previewModel?.activeWordColor);
 		expect(exportModel.manifest.rendererPath).toBe("rendered_capinsta_wysiwyg");
+		expect(exportModel.clip.start).toBe(clip.start);
+		expect(exportModel.clip.end).toBe(clip.end);
 	});
 });

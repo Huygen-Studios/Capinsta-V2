@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { mediaTimeToSeconds, type MediaTime } from "@/wasm";
-import { CapinstaCaptionRenderer } from "@/capinsta/render/CapinstaCaptionRenderer";
+import { renderCapinstaWysiwygExportCaption } from "@/capinsta/export/capinstaWysiwygExportRenderer";
+import { buildRenderDataForClip, type CapinstaTextRenderData } from "@/capinsta/exportRender";
 import {
 	activeCapinstaCaptionStateKey,
 	createCapinstaCaptionTimingIndex,
@@ -33,6 +34,7 @@ import {
 import { getPaperFoldManifest } from "@/effects/paper-fold/assets";
 import { resolvePaperFoldTiming } from "@/effects/paper-fold/timing";
 import type { TimelineElement } from "@/timeline";
+import type { EditorCore } from "@/core";
 import { updatePreviewSyncDiagnostics } from "@/preview/sync-diagnostics";
 
 declare global {
@@ -51,8 +53,6 @@ declare global {
 		} | null;
 	}
 }
-
-const PLAYING_OVERLAY_MIN_UPDATE_MS = 0;
 
 export function CapinstaActiveCaptionOverlay({
 	sceneLeft,
@@ -121,9 +121,6 @@ export function CapinstaActiveCaptionOverlay({
 	const [currentTime, setCurrentTime] = useState<MediaTime>(() =>
 		editor.playback.getCurrentTime(),
 	);
-	const [isPlaying, setIsPlaying] = useState(() =>
-		editor.playback.getIsPlaying(),
-	);
 	const timingIndex = useMemo(
 		() => createCapinstaCaptionTimingIndex({ records: visibleRecords }),
 		[visibleRecords],
@@ -155,10 +152,7 @@ export function CapinstaActiveCaptionOverlay({
 			const stateKey = activeCapinstaCaptionStateKey(activeState);
 			const now = performance.now();
 			const last = lastOverlayUpdateRef.current;
-			if (
-				stateKey === last.stateKey &&
-				now - last.wallTime < PLAYING_OVERLAY_MIN_UPDATE_MS
-			) {
+			if (stateKey === last.stateKey) {
 				return;
 			}
 			lastOverlayUpdateRef.current = { wallTime: now, stateKey };
@@ -167,7 +161,6 @@ export function CapinstaActiveCaptionOverlay({
 		const unsubscribeUpdate = editor.playback.onUpdate(update);
 		const unsubscribeSeek = editor.playback.onSeek(update);
 		const unsubscribePlayback = editor.playback.subscribe(() => {
-			setIsPlaying(editor.playback.getIsPlaying());
 			update(editor.playback.getCurrentTime());
 		});
 		return () => {
@@ -240,6 +233,17 @@ export function CapinstaActiveCaptionOverlay({
 				viewport: captionViewport,
 			}),
 		[timingIndex, timeSeconds, captionViewport],
+	);
+	const canvasRenderData = useMemo(
+		() =>
+			activeState
+				? buildRenderDataForClip({
+						record: activeState.record,
+						clip: activeState.clip,
+						canvasSize: captionViewport,
+					})
+				: null,
+		[activeState, captionViewport],
 	);
 	useEffect(() => {
 		if (!activeState) return;
@@ -382,13 +386,15 @@ export function CapinstaActiveCaptionOverlay({
 					className="relative size-full"
 					style={captionPaperFoldStyle(captionPaperFold)}
 				>
-					<CapinstaCaptionRenderer
-						renderModel={renderModel}
-						activeWordIds={activeState.activeWordIds}
-						timeSeconds={timeSeconds}
-						isPlaying={renderTimeSeconds !== undefined ? true : isPlaying}
-						viewport={captionViewport}
-					/>
+					{canvasRenderData ? (
+						<PlaybackCaptionCanvas
+							editor={editor}
+							renderData={canvasRenderData}
+							initialTimeSeconds={timeSeconds}
+							width={canvasWidth}
+							height={canvasHeight}
+						/>
+					) : null}
 					{captionPaperFold && captionPaperFold.state.progress < 0.999 ? (
 						<div
 							aria-hidden
@@ -407,6 +413,58 @@ export function CapinstaActiveCaptionOverlay({
 			</div>
 		</div>
 	);
+}
+
+function PlaybackCaptionCanvas({
+	editor,
+	renderData,
+	initialTimeSeconds,
+	width,
+	height,
+}: {
+	editor: EditorCore;
+	renderData: CapinstaTextRenderData;
+	initialTimeSeconds: number;
+	width: number;
+	height: number;
+}) {
+	const canvasRef = useRef<HTMLCanvasElement>(null);
+
+	useEffect(() => {
+		const canvas = canvasRef.current;
+		const ctx = canvas?.getContext("2d");
+		if (!canvas || !ctx) return;
+		let requestedTime = initialTimeSeconds;
+		let frameId: number | null = null;
+		const paint = () => {
+			frameId = null;
+			ctx.clearRect(0, 0, width, height);
+			const activeWordIds = renderData.words
+				.filter((word) => requestedTime >= word.start && requestedTime < word.end)
+				.map((word) => word.id);
+			renderCapinstaWysiwygExportCaption({
+				ctx,
+				renderData,
+				activeWordIds,
+				timeSeconds: requestedTime,
+				canvasSize: { width, height },
+			});
+		};
+		const requestPaint = (time: MediaTime) => {
+			requestedTime = mediaTimeToSeconds({ time });
+			if (frameId === null) frameId = requestAnimationFrame(paint);
+		};
+		paint();
+		const unsubscribeUpdate = editor.playback.onUpdate(requestPaint);
+		const unsubscribeSeek = editor.playback.onSeek(requestPaint);
+		return () => {
+			unsubscribeUpdate();
+			unsubscribeSeek();
+			if (frameId !== null) cancelAnimationFrame(frameId);
+		};
+	}, [editor.playback, height, initialTimeSeconds, renderData, width]);
+
+	return <canvas ref={canvasRef} width={width} height={height} className="size-full" />;
 }
 
 function captionPaperFoldStyle(

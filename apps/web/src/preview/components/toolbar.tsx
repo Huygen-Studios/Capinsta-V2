@@ -19,7 +19,7 @@ import {
 	PlayIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { Loader2, Maximize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
 	Select,
@@ -35,7 +35,7 @@ import {
 	PREVIEW_QUALITY_LABELS,
 	isPreviewQuality,
 } from "@/preview/preview-store";
-import type { MediaTime } from "@/wasm";
+import { roundMediaTime, ZERO_MEDIA_TIME, type MediaTime } from "@/wasm";
 
 export function PreviewToolbar({
 	onToggleFullscreen,
@@ -136,7 +136,9 @@ function PreviewScrubBar() {
 			const rect = trackRef.current?.getBoundingClientRect();
 			if (!rect || rect.width <= 0 || totalDuration <= 0) return;
 			const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-			editor.playback.seek({ time: Math.round(totalDuration * ratio) as MediaTime });
+			editor.playback.seek({
+				time: roundMediaTime({ time: totalDuration * ratio }),
+			});
 		},
 		[editor.playback, totalDuration],
 	);
@@ -158,18 +160,20 @@ function PreviewScrubBar() {
 		if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
 			event.preventDefault();
 			editor.playback.seek({
-				time: Math.max(0, Math.round(currentTime - step)) as MediaTime,
+				time: roundMediaTime({ time: Math.max(0, currentTime - step) }),
 			});
 		}
 		if (event.key === "ArrowRight" || event.key === "ArrowUp") {
 			event.preventDefault();
 			editor.playback.seek({
-				time: Math.min(totalDuration, Math.round(currentTime + step)) as MediaTime,
+				time: roundMediaTime({
+					time: Math.min(totalDuration, currentTime + step),
+				}),
 			});
 		}
 		if (event.key === "Home") {
 			event.preventDefault();
-			editor.playback.seek({ time: 0 as MediaTime });
+			editor.playback.seek({ time: ZERO_MEDIA_TIME });
 		}
 		if (event.key === "End") {
 			event.preventDefault();
@@ -346,14 +350,31 @@ function PreviewQualitySelect() {
 
 function PlayPauseButton() {
 	const isPlaying = useEditor((e) => e.playback.getIsPlaying());
+	const isPreparing = useEditor((e) => e.playback.getIsPreparing());
+	const [showPreparing, setShowPreparing] = useState(false);
+
+	useEffect(() => {
+		if (!isPreparing) {
+			setShowPreparing(false);
+			return;
+		}
+		const timer = window.setTimeout(() => setShowPreparing(true), 125);
+		return () => window.clearTimeout(timer);
+	}, [isPreparing]);
 
 	return (
 		<Button
 			variant="text"
 			size="icon"
+			aria-label={showPreparing ? "Preparing audio" : isPlaying ? "Pause" : "Play"}
+			disabled={isPreparing}
 			onClick={() => invokeAction("toggle-play")}
 		>
-			<HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} />
+			{showPreparing ? (
+				<Loader2 className="size-4 animate-spin" />
+			) : (
+				<HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} />
+			)}
 		</Button>
 	);
 }

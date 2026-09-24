@@ -30,6 +30,7 @@ import {
   resolveDynamicPunch,
   resolveEntranceMotion,
   resolveMrBeastPopScale,
+  resolveWordMotionFromFrames,
 } from "../render/captionMotion";
 
 interface Props {
@@ -42,7 +43,7 @@ interface Props {
   canvasSize?: CaptionCanvasSize;
 }
 
-type TimedCaptionWord = {
+export type TimedCaptionWord = {
   word: string;
   displayedWord?: string;
   originalWord?: string;
@@ -159,13 +160,6 @@ function easeOutExpo(t: number) {
   return safe === 1 ? 1 : 1 - Math.pow(2, -10 * safe);
 }
 
-function easeInOutCubic(t: number) {
-  const safe = clamp(t, 0, 1);
-  return safe < 0.5
-    ? 4 * safe * safe * safe
-    : 1 - Math.pow(-2 * safe + 2, 3) / 2;
-}
-
 function stableHash(value: string) {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) {
@@ -189,34 +183,8 @@ function asymmetricScaleTransform(config: CaptionStyleConfig, progress: number) 
 }
 
 function wordMotionTransform(ageFrames: number, config: CaptionStyleConfig, isAnchor = false) {
-  if (config.animationType === "none" || config.animationStrength <= 0 || ageFrames < 0) {
-    return "translateY(0) scale(1)";
-  }
-
-  const speed = Math.max(0.4, config.animationSpeed) * (isAnchor ? 0.9 : 1);
-  const smoothness = clamp(config.animationSmoothness, 0, 1);
-  const peakFrame = Math.max(2, (3 + smoothness * 2) / speed);
-  const settleFrame = Math.max(peakFrame + 2, (8 + smoothness * 4) / speed);
-  const maxScale = 1 + (config.activeWordScale - 1) * config.animationStrength;
-  const lift = (config.animationType === "bounce" ? -4 : -2.5) * config.animationStrength;
-
-  if (ageFrames <= peakFrame) {
-    const p = easeInOutCubic(ageFrames / peakFrame);
-    const startScale = interpolate(config.animationStrength, 0, 1.4, 1, 0.98);
-    const scale = startScale + (maxScale - startScale) * p;
-    const y = (5 * config.animationStrength) + (lift - 5 * config.animationStrength) * p;
-    return combineTransforms(`translateY(${y.toFixed(3)}px) scale(${scale.toFixed(3)})`, asymmetricScaleTransform(config, p));
-  }
-
-  if (ageFrames <= settleFrame) {
-    const p = easeInOutCubic((ageFrames - peakFrame) / Math.max(0.001, settleFrame - peakFrame));
-    const settle = config.animationType === "bounce" && ageFrames < settleFrame - 2 ? 0.98 : 1;
-    const scale = maxScale + (settle - maxScale) * p;
-    const y = lift * (1 - p);
-    return combineTransforms(`translateY(${y.toFixed(3)}px) scale(${scale.toFixed(3)})`, asymmetricScaleTransform(config, 1 - p));
-  }
-
-  return "translateY(0) scale(1)";
+  const motion = resolveWordMotionFromFrames({ ageFrames, config, isAnchor });
+  return `translateY(${motion.translateY.toFixed(3)}px) scale(${motion.scale.toFixed(3)}) scaleX(${motion.scaleX?.toFixed(3)}) scaleY(${motion.scaleY?.toFixed(3)})`;
 }
 
 function wordEntranceStyle(wordStart: number, currentTime: number, _fps: number, config: CaptionStyleConfig): React.CSSProperties {
@@ -484,7 +452,7 @@ function isPunctuationOnly(word: string) {
   return /^[^a-z0-9]+$/i.test(word.trim());
 }
 
-function normalizeLockupWords(words: TimedCaptionWord[]) {
+export function normalizeLockupWords(words: TimedCaptionWord[]) {
   const normalized: TimedCaptionWord[] = [];
   for (const word of words) {
     const text = word.word.trim();
@@ -510,7 +478,7 @@ type LayoutBounds = {
 
 type BuildWordRole = "anchor" | "supporting";
 
-type EditorialWordPlacement = {
+export type EditorialWordPlacement = {
   id: string;
   index: number;
   text: string;
@@ -524,7 +492,7 @@ type EditorialWordPlacement = {
   isAnchor: boolean;
 };
 
-type EditorialLockupLayout = {
+export type EditorialLockupLayout = {
   width: number;
   height: number;
   bounds: LayoutBounds;
@@ -533,7 +501,7 @@ type EditorialLockupLayout = {
   placements: EditorialWordPlacement[];
 };
 
-type BuildWordGroup = {
+export type BuildWordGroup = {
   words: TimedCaptionWord[];
   groupIndex: number;
   start: number;
@@ -616,7 +584,7 @@ function chooseAnchorIndex(words: TimedCaptionWord[]) {
   return bestIndex;
 }
 
-function buildEditorialWordGroups(words: TimedCaptionWord[], captionEnd: number): BuildWordGroup[] {
+export function buildEditorialWordGroups(words: TimedCaptionWord[], captionEnd: number): BuildWordGroup[] {
   const groups: BuildWordGroup[] = [];
   let index = 0;
 
@@ -641,7 +609,7 @@ function buildEditorialWordGroups(words: TimedCaptionWord[], captionEnd: number)
   return groups;
 }
 
-function selectEditorialWordGroup(words: TimedCaptionWord[], activeCaption: Caption, currentTime: number) {
+export function selectEditorialWordGroup(words: TimedCaptionWord[], activeCaption: Caption, currentTime: number) {
   const groups = buildEditorialWordGroups(words, activeCaption.end);
   if (!groups.length) return null;
 
@@ -662,7 +630,7 @@ function hasFlatEditorialTiming(words: TimedCaptionWord[]) {
   return compressedSpan || repeatedStart;
 }
 
-function buildEditorialRevealWords(
+export function buildEditorialRevealWords(
   words: TimedCaptionWord[],
   captionStart: number,
   captionEnd: number,
@@ -930,7 +898,7 @@ function buildFallbackStackLayout(
   return placements;
 }
 
-function buildEditorialLockupLayout(
+export function buildEditorialLockupLayout(
   words: TimedCaptionWord[],
   activeCaption: Caption,
   config: CaptionStyleConfig,

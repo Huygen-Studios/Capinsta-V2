@@ -10,14 +10,13 @@ Baseline: `4d25dc839635f5cab2b7d5c7ad9d24bd514b1835`
 - The browser/MediaBunny export architecture remains in place. No server renderer, Playwright, Python, or FFmpeg is introduced.
 - `G:\Huygen Studios\product\Capinsta-V2-main backup todfay\Capinsta-V2-main` is a read-only reference.
 
-## Current implementation findings
+## Confirmed root causes
 
 ### Caption preview and export
 
-- Preview captions are rendered as DOM content by `OriginalCaptionRenderer` through `CapinstaCaptionRenderer`.
-- While playback is active, `CapinstaCaptionRenderer` passes `fps=12`; paused preview and export-state rendering use 30 FPS. Several animation helpers convert elapsed media time into a frame count using that supplied FPS. The same timestamp can therefore produce a different transform depending on whether preview is playing, paused, or exporting.
-- Browser export uses a separate canvas painter in `capinstaWysiwygExportRenderer.ts`. Specialized presets have independent branches and motion formulas, so their frame state can diverge from the DOM preview even when both receive the same media timestamp.
-- The caption overlay publishes a React state update on every playback notification. This makes caption layout and React reconciliation compete with video-frame compositing during playback.
+- Preview previously used the DOM `OriginalCaptionRenderer`, while browser export used an independent canvas implementation. Editorial Lockup therefore grouped and placed words using different algorithms.
+- Kinetic Fade and Attention Punch previously composed per-word entrance transforms in preview but only an approximation in export.
+- Export reconstructed caption bounds from first/last word timestamps instead of retaining the actual clip bounds.
 
 ### Preview scheduling and quality
 
@@ -26,9 +25,8 @@ Baseline: `4d25dc839635f5cab2b7d5c7ad9d24bd514b1835`
 
 ### Transport and audio
 
-- `PlaybackManager` advances the visual timeline from `performance.now()`.
-- `AudioManager` independently creates/starts an `AudioContext`, gathers clips, decodes media, and schedules audio after the playback state has already changed to playing.
-- Consequently the first visual frames can advance while audio is still preparing. After start, visual time and audio time are derived from different clock origins. Session guards prevent stale audio work, but they do not provide a shared transport clock.
+- Normal preview audio used an asynchronous `AudioBufferSink` iterator and discarded a whole decoded buffer when it arrived later than its own duration. Those `continue` branches directly created the measured 0.31–0.42 second holes.
+- Audio preparation did not guarantee that samples were decoded and scheduled before the transport became playing.
 
 ### Vercel build
 
@@ -47,15 +45,15 @@ The backup is a smaller Vite application, not a directory-compatible version of 
 
 The backup's caption painter, presets, editor model, and simplified single-video export are not suitable replacements for the current production systems and will not be copied.
 
-## Implementation direction
+## Implemented correction
 
-1. Extract the current preview's motion curves into one pure, timestamp-driven module. Preserve their shapes with a fixed legacy 30 FPS conversion where necessary.
-2. Make both the DOM preview and canvas export resolve specialized preset state through those functions. Keep renderer-specific text measurement and drawing at the final layer.
-3. Replace the playing-preview 12 FPS animation input and add latest-frame-wins scheduling with stale-generation rejection.
-4. Start playback only after audio is prepared, then use the audio clock as the master clock when audio is active. Retain a monotonic fallback for silent projects and unavailable audio.
-5. Start Auto preview conservatively, use viewport-aware scaling, and add asymmetric thresholds plus cooldown.
-6. Add development-only timing diagnostics and a caption parity lab that compare the shared state at identical timestamps.
-7. Add deterministic tests for motion FPS independence, preset-specific state, caption boundaries, latest-frame scheduling, and transport/seek behavior.
+1. Normal local clips are fully decoded and retimed into a continuous cached `AudioBuffer`. Each playing timeline clip is scheduled as one `AudioBufferSourceNode`; the discardable real-time chunk iterator was removed.
+2. The current and immediately audible clips are decoded before play. Sources are scheduled 75 ms in the future, and the audio clock remains frozen at the requested timeline time until that boundary.
+3. Audio cache memory is accounted and bounded to 256 MiB with inactive least-recently-used entries evicted first.
+4. Playback and export captions now call `resolveCapinstaCaptionFrame()` and the exact same `paintCapinstaCaptionFrame()` canvas path. Playback painting is imperative and no longer drives React state on every transport tick.
+5. Editorial Lockup uses the approved `buildEditorialLockupLayout()` algorithm in the shared painter, retains per-word placement, and no longer joins support words into a synthetic string.
+6. Export retains actual clip bounds. Specialized word motion is composed by the same pure timestamp-based helpers.
+7. In development, `/dev/caption-parity` paints the same fixture through the preview/export canvas paths and reports the exact pixel-difference count.
 
 ## Success criteria
 
@@ -70,17 +68,21 @@ The backup's caption painter, presets, editor model, and simplified single-video
 
 | Preset | Preview renderer | Export renderer | Shared motion/state | Status |
 | --- | --- | --- | --- | --- |
-| Word Highlight Box | Original DOM specialized component | Canvas word/background painter | Fixed 30 FPS legacy timebase | Timing matched; renderer-specific text rasterization remains |
-| Viral Word Highlight | Original DOM specialized component | Canvas word/background painter | Fixed 30 FPS legacy timebase | Timing matched; renderer-specific text rasterization remains |
-| Attention Punch | Original DOM specialized branch | Canvas specialized branch | `resolveSpecializedWordMotion` | Shared timestamp state |
-| Apple Cinematic | Original DOM specialized branch | Canvas specialized branch | `resolveSpecializedWordMotion` | Shared opacity, Y, blur, entrance, and scale state |
-| Kinetic Fade | Original DOM specialized branch | Canvas specialized branch | `resolveSpecializedWordMotion` | Shared opacity, Y, entrance, and scale state |
-| MrBeast Style | Original DOM specialized branch | Canvas specialized branch | Shared entrance, pop, classifier, and stable hash | Shared timestamp state and deterministic styling |
-| Editorial Lockup | Original DOM lockup layout | Canvas lockup painter | Fixed 30 FPS legacy timebase | Timing matched; dedicated layout preserved |
-| Dynamic Punch | Original DOM specialized branch | Canvas specialized branch | Shared spring, classifier, and stable hash | Shared scale, opacity, color, and tilt state |
+| Word Highlight Box | Shared canvas painter | Shared canvas painter | Same resolved frame | Shared path |
+| Viral Word Highlight | Shared canvas painter | Shared canvas painter | Same resolved frame | Shared path |
+| Attention Punch | Shared canvas painter | Shared canvas painter | Full shared entrance + word motion | Shared path |
+| Apple Cinematic | Shared canvas painter | Shared canvas painter | Full shared timestamp state | Shared path |
+| Kinetic Fade | Shared canvas painter | Shared canvas painter | Full shared entrance + word motion | Shared path |
+| MrBeast Style | Shared canvas painter | Shared canvas painter | Shared classifier/hash/motion | Shared path |
+| Editorial Lockup | Shared approved lockup layout | Shared approved lockup layout | Per-word placements | Shared path |
+| Dynamic Punch | Shared canvas painter | Shared canvas painter | Shared classifier/hash/motion | Shared path |
 
-The DOM preview remains temporarily because it is the approved visual reference. The canvas exporter now consumes shared pure motion/classification state; remaining DOM-versus-canvas differences are limited to browser typography/rasterization and are visible through the development diagnostics rather than hidden by a generic fallback.
+The DOM renderer remains available for editing/reference code, but normal playback captions use the shared canvas painter used by both full-video and graphics-only export.
 
 ## Development diagnostics
 
-With `NEXT_PUBLIC_CAPINSTA_DEBUG=true`, the live object `window.__CAPINSTA_SYNC_DIAGNOSTICS__` reports transport, audio, requested/rendered video, caption and playhead times; render cost; computed lag/drift; coalesced frame count; dropped frame count; preview resolution; and resolved quality. It is not populated in normal production mode.
+With `NEXT_PUBLIC_CAPINSTA_DEBUG=true`, the live object `window.__CAPINSTA_SYNC_DIAGNOSTICS__` additionally reports the audio strategy, scheduled context start, decoded-cache bytes, active source count, buffer ahead, underflows, dropped samples, and dropped buffers. The continuous local-buffer path publishes zero for both dropped-sample and dropped-buffer counters.
+
+## Verification boundary
+
+Deterministic tests cover a 50-second continuous source schedule, seek offsets, exact clip boundaries, all preset frame sequences, and the real `ika / 10 / 20` Editorial regression. A source MP4 was not included in the workspace attachments, so the real-time 50-second listening pass and exported-video visual comparison must still be performed with the reporter's media before declaring production acceptance.

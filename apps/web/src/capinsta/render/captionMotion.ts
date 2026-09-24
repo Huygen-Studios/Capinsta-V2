@@ -10,6 +10,8 @@ export interface CaptionWordMotionState {
 	translateY: number;
 	rotateX: number;
 	blur: number;
+	scaleX?: number;
+	scaleY?: number;
 }
 
 const clamp = (value: number, min = 0, max = 1) =>
@@ -86,6 +88,50 @@ export function motionFramesSince({
 	startSeconds: number;
 }): number {
 	return (timeSeconds - startSeconds) * CAPTION_MOTION_TIMEBASE_FPS;
+}
+
+export function resolveWordMotionFromFrames({
+	ageFrames,
+	config,
+	isAnchor = false,
+}: {
+	ageFrames: number;
+	config: CaptionStyleConfig;
+	isAnchor?: boolean;
+}): Pick<CaptionWordMotionState, "scale" | "translateY" | "scaleX" | "scaleY"> {
+	if (config.animationType === "none" || config.animationStrength <= 0 || ageFrames < 0) {
+		return { scale: 1, translateY: 0, scaleX: 1, scaleY: 1 };
+	}
+	const speed = Math.max(0.4, config.animationSpeed) * (isAnchor ? 0.9 : 1);
+	const smoothness = clamp(config.animationSmoothness);
+	const peakFrame = Math.max(2, (3 + smoothness * 2) / speed);
+	const settleFrame = Math.max(peakFrame + 2, (8 + smoothness * 4) / speed);
+	const maxScale = 1 + (config.activeWordScale - 1) * config.animationStrength;
+	const lift = (config.animationType === "bounce" ? -4 : -2.5) * config.animationStrength;
+	let progress = 0;
+	let scale = 1;
+	let translateY = 0;
+	if (ageFrames <= peakFrame) {
+		progress = easeInOutCubic(ageFrames / peakFrame);
+		const strengthProgress = clamp(config.animationStrength / 1.4);
+		const startScale = 1 + (0.98 - 1) * easeInOutCubic(strengthProgress);
+		scale = startScale + (maxScale - startScale) * progress;
+		translateY = 5 * config.animationStrength + (lift - 5 * config.animationStrength) * progress;
+	} else if (ageFrames <= settleFrame) {
+		progress = 1 - easeInOutCubic((ageFrames - peakFrame) / Math.max(0.001, settleFrame - peakFrame));
+		const settle = config.animationType === "bounce" && ageFrames < settleFrame - 2 ? 0.98 : 1;
+		scale = settle + (maxScale - settle) * progress;
+		translateY = lift * progress;
+	}
+	const squash = config.asymmetricScaleEnabled
+		? Math.sin(clamp(progress) * Math.PI) * clamp(config.asymmetricScaleStrength || 0)
+		: 0;
+	return {
+		scale,
+		translateY,
+		scaleX: 1 + squash * 0.08,
+		scaleY: 1 - squash * 0.045,
+	};
 }
 
 export function resolveEntranceMotion({
@@ -231,6 +277,10 @@ export function resolveSpecializedWordMotion({
 	config: CaptionStyleConfig;
 }): CaptionWordMotionState {
 	const entrance = resolveEntranceMotion({ wordStart, timeSeconds, config });
+	const wordMotion = resolveWordMotionFromFrames({
+		ageFrames: Math.max(0, motionFramesSince({ timeSeconds, startSeconds: wordStart })),
+		config,
+	});
 	if (strategy === "dynamic_punch") {
 		return {
 			...entrance,
@@ -268,13 +318,17 @@ export function resolveSpecializedWordMotion({
 		return {
 			...entrance,
 			opacity: entrance.opacity * progress,
-			scale: entrance.scale * (0.92 + progress * 0.08),
-			translateY: entrance.translateY + (1 - progress) * 10,
+			scale: entrance.scale * (0.92 + progress * 0.08) * wordMotion.scale,
+			translateY: entrance.translateY + (1 - progress) * 10 + wordMotion.translateY,
+			scaleX: wordMotion.scaleX,
+			scaleY: wordMotion.scaleY,
 		};
 	}
 	return {
 		...entrance,
-		scale: entrance.scale * (active ? config.activeWordScale : 1),
-		translateY: entrance.translateY + (active ? -2 : 0),
+		scale: entrance.scale * wordMotion.scale * (active ? config.activeWordScale : 1),
+		translateY: entrance.translateY + wordMotion.translateY + (active ? -2 : 0),
+		scaleX: wordMotion.scaleX,
+		scaleY: wordMotion.scaleY,
 	};
 }

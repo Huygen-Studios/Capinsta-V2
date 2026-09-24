@@ -20,6 +20,8 @@ export interface CapinstaTextRenderData {
 	documentId: string;
 	clipId: string;
 	clipText: string;
+	clipStart: number;
+	clipEnd: number;
 	renderText: string;
 	wordIds: string[];
 	words: CapinstaExportWord[];
@@ -105,7 +107,7 @@ function toExportWord(word: NeutralCaptionWord): CapinstaExportWord {
 	};
 }
 
-function buildRenderDataForClip({
+export function buildRenderDataForClip({
 	record,
 	clip,
 	canvasSize,
@@ -133,6 +135,8 @@ function buildRenderDataForClip({
 		documentId: record.document.id,
 		clipId: clip.id,
 		clipText: clip.text,
+		clipStart: clip.start,
+		clipEnd: clip.end,
 		renderText: wrapExportText({ text: clip.text, style }),
 		wordIds: [...clip.wordIds],
 		words,
