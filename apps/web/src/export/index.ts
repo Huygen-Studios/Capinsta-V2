@@ -61,10 +61,9 @@ export function getExportFileExtension({
 /**
  * Normalizes an arbitrary error value into a human-readable string.
  *
- * The export pipeline may receive error payloads from external APIs (FastAPI
- * validation errors, etc.) where `error`/`detail` fields can be objects or
- * arrays instead of plain strings. Passing such values to React as JSX children
- * causes a runtime crash ("Objects are not valid as a React child").
+ * The export pipeline may receive browser or codec errors whose detail fields
+ * are objects or arrays instead of plain strings. Passing those values to React
+ * as JSX children causes a runtime crash.
  *
  * This utility ensures the value stored in `ExportResult.error` is always a
  * string, serializing objects/arrays to JSON when necessary.

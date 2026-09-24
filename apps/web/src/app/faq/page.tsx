@@ -43,15 +43,15 @@ const faqs = [
 	},
 	{
 		q: "Is my uploaded video stored permanently?",
-		a: "No. Your video, captions, and generated exports are held only during your active editing session. They are automatically deleted after a period of inactivity.",
+		a: "Your video and project are stored locally in this browser until you delete the project or clear site data. Capinsta does not upload source video to its servers.",
 	},
 	{
 		q: "What happens to my project if I close the browser?",
-		a: "A heartbeat signal keeps your project alive while you are editing. If you close the browser and do not return, the project and all associated files (video, captions, exports) are automatically deleted after the inactivity timeout.",
+		a: "The project remains in local browser storage and can be reopened from the projects screen using the same browser profile.",
 	},
 	{
 		q: "Should I download my export before leaving?",
-		a: "Yes. Always download your exports before closing the editor or navigating away. Once a project expires, files cannot be recovered.",
+		a: "Download finished exports when you need them as ordinary files. The editable project remains in browser storage until you remove it or clear site data.",
 	},
 	{
 		q: "Are there watermarks on exports?",

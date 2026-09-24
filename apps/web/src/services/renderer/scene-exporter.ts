@@ -11,6 +11,8 @@ import {
 	QUALITY_MEDIUM,
 	QUALITY_HIGH,
 	QUALITY_VERY_HIGH,
+	canEncodeVideo,
+	canEncodeAudio,
 } from "mediabunny";
 import type { FrameRate } from "opencut-wasm";
 import { mediaTimeToSeconds } from "opencut-wasm";
@@ -19,13 +21,12 @@ import { frameRateToFloat } from "@/fps/utils";
 import type { RootNode } from "./nodes/root-node";
 import type { ExportFormat, ExportQuality } from "@/export";
 import { CanvasRenderer } from "./canvas-renderer";
-import type { CapinstaExportOverlayHost } from "@/capinsta/export/capinsta-overlay-capture";
+import type { CapinstaCaptionDocumentRecord } from "@/capinsta/types";
 import {
-	rasterizeOverlayToCanvas,
-	CapinstaOverlayRasterizationError,
-	type CapinstaRasterStats,
-} from "@/capinsta/export/capinsta-overlay-capture";
-import type { CapinstaRenderModel } from "@/capinsta/render/capinstaRenderModel";
+	getActiveCapinstaExportWordIdsAtTime,
+	getActiveCapinstaTextRenderDataAtTime,
+} from "@/capinsta/exportRender";
+import { renderCapinstaWysiwygExportCaption } from "@/capinsta/export/capinstaWysiwygExportRenderer";
 
 type ExportParams = {
 	width: number;
@@ -35,24 +36,7 @@ type ExportParams = {
 	quality: ExportQuality;
 	shouldIncludeAudio?: boolean;
 	audioBuffer?: AudioBuffer;
-	/**
-	 * OPTIONAL. If provided, the React overlay host is advanced to each frame's
-	 * time and rasterized on top of the WASM-composited video frame BEFORE
-	 * encoding. This makes the React DOM overlay (CapinstaActiveCaptionOverlay)
-	 * the single visual caption renderer for the exported MP4 — pixel-identical
-	 * to the editor preview.
-	 */
-	overlayHost?: CapinstaExportOverlayHost;
-	/**
-	 * OPTIONAL callback invoked for every export frame with the active caption
-	 * state. The editor preview uses this to keep its overlay in sync with the
-	 * export frame time (otherwise the preview overlay appears stuck).
-	 */
-	onOverlayFrame?: (info: {
-		frameIndex: number;
-		frameTimeSeconds: number;
-		model: CapinstaRenderModel | null;
-	}) => void;
+	captionRecords?: CapinstaCaptionDocumentRecord[];
 };
 
 export interface CapinstaExportOverlayReport {
@@ -91,8 +75,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 	private quality: ExportQuality;
 	private shouldIncludeAudio: boolean;
 	private audioBuffer?: AudioBuffer;
-	private overlayHost?: CapinstaExportOverlayHost;
-	private onOverlayFrame?: ExportParams["onOverlayFrame"];
+	private captionRecords: CapinstaCaptionDocumentRecord[];
 
 	/** Last overlay burn-in report, populated by export(). */
 	lastOverlayReport: CapinstaExportOverlayReport | null = null;
@@ -107,8 +90,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		quality,
 		shouldIncludeAudio,
 		audioBuffer,
-		overlayHost,
-		onOverlayFrame,
+		captionRecords,
 	}: ExportParams) {
 		super();
 		this.renderer = new CanvasRenderer({
@@ -121,8 +103,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		this.quality = quality;
 		this.shouldIncludeAudio = shouldIncludeAudio ?? false;
 		this.audioBuffer = audioBuffer;
-		this.overlayHost = overlayHost;
-		this.onOverlayFrame = onOverlayFrame;
+		this.captionRecords = captionRecords ?? [];
 	}
 
 	cancel(): void {
@@ -143,11 +124,13 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 
 		const width = this.renderer.width;
 		const height = this.renderer.height;
-		const hasOverlay = !!this.overlayHost;
+		const hasOverlay = this.captionRecords.length > 0;
 
-		// CRITICAL: the WASM compositor's output canvas is a WebGL canvas. Calling
-		// getContext("2d") on it returns null, so we CANNOT draw the overlay onto
-		// it directly. Instead, when an overlay host is present, we composite every
+		// The WASM compositor's output canvas is WebGL, so captions are composited
+		// through an intermediate 2D canvas before each encoded frame. The canvas
+		// renderer consumes the same CapInsta render model and preset definitions as
+		// preview; no DOM screenshot or server browser is involved.
+		// When caption records are present, we composite every
 		// frame through an intermediate 2D canvas:
 		//   1. renderer.render() → WASM canvas (video frame)
 		//   2. drawImage(wasmCanvas) → compositeCanvas (2D)
@@ -174,6 +157,25 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 
 		const encoderSourceCanvas: HTMLCanvasElement | OffscreenCanvas =
 			compositeCanvas ?? this.renderer.getOutputCanvas();
+		const videoCodec = this.format === "webm" ? "vp9" : "avc";
+		if (!(await canEncodeVideo(videoCodec, { width, height, bitrate: qualityMap[this.quality] }))) {
+			throw new Error(
+				`This browser cannot encode ${this.format.toUpperCase()} video at ${width}×${height}. Try current Chrome or Edge, or lower the export resolution.`,
+			);
+		}
+		if (
+			this.shouldIncludeAudio &&
+			this.audioBuffer &&
+			!(await canEncodeAudio(this.format === "webm" ? "opus" : "aac", {
+				sampleRate: this.audioBuffer.sampleRate,
+				numberOfChannels: this.audioBuffer.numberOfChannels,
+				bitrate: 192_000,
+			}))
+		) {
+			throw new Error(
+				`This browser cannot encode the audio track for ${this.format.toUpperCase()}. Try current Chrome or Edge.`,
+			);
+		}
 
 		const outputFormat =
 			this.format === "webm" ? new WebMOutputFormat() : new Mp4OutputFormat();
@@ -184,7 +186,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		});
 
 		const videoSource = new CanvasSource(encoderSourceCanvas, {
-			codec: this.format === "webm" ? "vp9" : "avc",
+			codec: videoCodec,
 			bitrate: qualityMap[this.quality],
 		});
 
@@ -218,39 +220,23 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			audioSource.close();
 		}
 
-		// Overlay report accumulators (FIX P).
+		if (hasOverlay && "fonts" in document) await document.fonts.ready;
+
 		const report: CapinstaExportOverlayReport = {
-			overlayHostMounted: !!this.overlayHost,
+			overlayHostMounted: hasOverlay,
 			overlayDomCount: 0,
-			overlayRect: null,
+			overlayRect: hasOverlay ? { width, height } : null,
 			captionFramesRasterized: 0,
 			framesWithActiveCaption: 0,
 			maxRasterPixels: 0,
 			minRasterPixelsOnActiveCaption: Number.POSITIVE_INFINITY,
 			firstRasterError: null,
-			compositedBeforeEncode: !!this.overlayHost,
+			compositedBeforeEncode: hasOverlay,
 		};
-		if (this.overlayHost) {
-			const overlayEl = this.overlayHost.getOverlayElement();
-			if (overlayEl) {
-				const rect = overlayEl.getBoundingClientRect();
-				report.overlayRect = { width: rect.width, height: rect.height };
-				report.overlayDomCount = document.querySelectorAll(
-					"[data-capinsta-export-overlay-host='true']",
-				).length;
-			}
-		}
 
 		const isDebug =
 			typeof process !== "undefined" &&
 			process.env.NEXT_PUBLIC_CAPINSTA_DEBUG === "true";
-		const skipOverlay =
-			typeof process !== "undefined" &&
-			process.env.NEXT_PUBLIC_CAPINSTA_EXPORT_SKIP_OVERLAY === "true";
-		const skipWasmCopy =
-			typeof process !== "undefined" &&
-			process.env.NEXT_PUBLIC_CAPINSTA_EXPORT_SKIP_WASM_COPY === "true";
-
 		try {
 			for (let i = 0; i < frameCount; i++) {
 				if (this.isCancelled) {
@@ -265,137 +251,62 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 				// (a) Render the video/media frame onto the WASM canvas.
 				await this.renderer.render({ node: rootNode, time: timeTicks });
 
-				// (b)-(e) Overlay compositing pipeline. Order matters:
-				//   b. advance React overlay to frameTime (flushSync inside host)
-				//   c. rasterize React overlay → scratch pixels
-				//   d. draw overlay onto encoder canvas (BEFORE videoSource.add)
-				//   e. videoSource.add() captures the composited frame
-				if (
-					this.overlayHost &&
-					compositeCtx &&
-					compositeCanvas &&
-					!skipOverlay
-				) {
-					// First, blit the WASM-rendered video frame onto the composite canvas.
-					if (!skipWasmCopy) {
-						compositeCtx.clearRect(0, 0, width, height);
-						compositeCtx.drawImage(
-							this.renderer.getOutputCanvas(),
-							0,
-							0,
-							width,
-							height,
-						);
-						try {
-							compositeCtx.getImageData(0, 0, 1, 1);
-							if (isDebug && FRAME_LOG_INDICES.has(i)) {
-								console.debug("[capinsta-export] WASM copy origin clean: YES");
-							}
-						} catch (e) {
-							console.error(
-								"[capinsta-export] Canvas tainted after drawing WASM frame",
-								e,
-							);
-							throw new Error(
-								"Failed to construct 'VideoFrame': Canvas tainted by WASM/WebGL video frame. A cross-origin media source was likely drawn without CORS.",
-							);
-						}
-					}
-
-					// (b) Advance the React overlay DOM to this frame's time.
-					const model = await this.overlayHost.advanceToTime(timeSeconds);
-
-					// Notify the preview so its overlay stays in sync with export time.
-					this.onOverlayFrame?.({
-						frameIndex: i,
-						frameTimeSeconds: timeSeconds,
-						model,
+				if (hasOverlay && compositeCtx && compositeCanvas) {
+					compositeCtx.clearRect(0, 0, width, height);
+					compositeCtx.drawImage(
+						this.renderer.getOutputCanvas(),
+						0,
+						0,
+						width,
+						height,
+					);
+					const renderData = getActiveCapinstaTextRenderDataAtTime({
+						records: this.captionRecords,
+						timeSeconds,
+						canvasSize: { width, height },
 					});
-
-					// (c)+(d) Rasterize overlay onto the composite canvas.
-					if (model) {
+					if (renderData) {
 						report.framesWithActiveCaption++;
 						try {
-							const stats: CapinstaRasterStats = await rasterizeOverlayToCanvas(
-								{
-									host: this.overlayHost,
-									targetCtx: compositeCtx,
-								},
+							const activeWordIds = getActiveCapinstaExportWordIdsAtTime({
+								renderData,
+								timeSeconds,
+							});
+							const result = renderCapinstaWysiwygExportCaption({
+								ctx: compositeCtx,
+								renderData,
+								activeWordIds,
+								timeSeconds,
+								canvasSize: { width, height },
+							});
+							const area = Math.max(
+								0,
+								Math.round(result.debug.box.width * result.debug.box.height),
 							);
-							if (stats.rasterized) {
-								report.captionFramesRasterized++;
-								if (stats.nonTransparentPixels >= 0) {
-									report.maxRasterPixels = Math.max(
-										report.maxRasterPixels,
-										stats.nonTransparentPixels,
-									);
-									report.minRasterPixelsOnActiveCaption = Math.min(
-										report.minRasterPixelsOnActiveCaption,
-										stats.nonTransparentPixels,
-									);
-								}
-							}
-							// Fail-fast: caption was active but rasterization produced
-							// ZERO non-transparent pixels. This is the burn-in bug —
-							// surface it instead of silently shipping an MP4 with no
-							// captions.
-							if (
-								stats.nonTransparentPixels === 0 &&
-								!process.env.NEXT_PUBLIC_CAPINSTA_EXPORT_DEBUG_BOX
-							) {
-								throw new CapinstaOverlayRasterizationError(
-									`CapInsta overlay rasterized 0 non-transparent pixels on ` +
-										`frame ${i} (time ${timeSeconds.toFixed(3)}s) even though ` +
-										`a caption clip is active (clipId=${model.clip.id}, ` +
-										`text="${model.text}"). The React overlay DOM did not ` +
-										`produce visible pixels — burn-in failed.`,
-									{
-										frameIndex: i,
-										timeSeconds,
-										clipId: model.clip.id,
-										stats,
-									},
-								);
-							}
-						} catch (err) {
-							if (!report.firstRasterError) {
-								report.firstRasterError =
-									err instanceof Error ? err.message : String(err);
-							}
-							throw err;
+							report.captionFramesRasterized++;
+							report.maxRasterPixels = Math.max(report.maxRasterPixels, area);
+							report.minRasterPixelsOnActiveCaption = Math.min(
+								report.minRasterPixelsOnActiveCaption,
+								area,
+							);
+						} catch (error) {
+							report.firstRasterError ??=
+								error instanceof Error ? error.message : String(error);
+							throw error;
 						}
 					}
-
-					// Frame sample logging at frames 0/30/60/90.
-					if (isDebug && FRAME_LOG_INDICES.has(i)) {
-						console.debug("[capinsta-export] frame sample", {
-							frameIndex: i,
-							frameTimeSeconds: timeSeconds,
-							activeCaptionId: model?.clip.id ?? null,
-							activeWordId: model?.activeWordId ?? null,
-							activeCaptionText: model?.text ?? null,
-							rasterized:
-								report.captionFramesRasterized > 0
-									? "yes"
-									: "no-active-caption",
-						});
-					}
-
 					try {
 						compositeCtx.getImageData(0, 0, 1, 1);
-						if (isDebug && FRAME_LOG_INDICES.has(i)) {
-							console.debug(
-								"[capinsta-export] Overlay rasterization origin clean: YES",
-							);
-						}
-					} catch (e) {
-						console.error(
-							"[capinsta-export] Canvas tainted after drawing overlay",
-							e,
-						);
+					} catch {
 						throw new Error(
-							"Failed to construct 'VideoFrame': Canvas tainted by React overlay rasterization. The overlay likely contains a cross-origin external font or image.",
+							"The export canvas was blocked by cross-origin media. Re-import the source file locally and retry.",
 						);
+					}
+					if (isDebug && FRAME_LOG_INDICES.has(i)) {
+						console.debug("[capinsta-export] caption frame", {
+							frameIndex: i,
+							active: Boolean(renderData),
+						});
 					}
 				}
 

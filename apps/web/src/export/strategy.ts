@@ -1,8 +1,8 @@
-export type CapinstaExportStrategy = "headless";
+export type CapinstaExportStrategy = "browser-scene";
 export type CapinstaExportRoute = "headless-worker" | "browser-scene";
 
 export const DEFAULT_CAPINSTA_EXPORT_STRATEGY: CapinstaExportStrategy =
-	"headless";
+	"browser-scene";
 
 export function resolveCapinstaExportStrategy({
 	configured,
@@ -13,7 +13,7 @@ export function resolveCapinstaExportStrategy({
 } = {}): CapinstaExportStrategy {
 	if (legacyForeignObjectFallback?.trim().toLowerCase() === "true") {
 		throw new Error(
-			"Invalid export configuration: NEXT_PUBLIC_CAPINSTA_EXPORT_FALLBACK_FOREIGNOBJECT is no longer supported. Remove it; CapInsta exports use the headless Playwright worker.",
+			"Invalid export configuration: the legacy DOM rasterization fallback is no longer supported. Remove NEXT_PUBLIC_CAPINSTA_EXPORT_FALLBACK_FOREIGNOBJECT; CapInsta exports captions with its browser canvas renderer.",
 		);
 	}
 
@@ -22,15 +22,13 @@ export function resolveCapinstaExportStrategy({
 		return DEFAULT_CAPINSTA_EXPORT_STRATEGY;
 	}
 
-	throw new Error(
-		`Unsupported CapInsta export strategy "${configured}". Supported strategy: headless.`,
-	);
+	throw new Error(`Unsupported CapInsta export strategy "${configured}". Browser export is the only supported strategy.`);
 }
 
 export function resolveCapinstaExportRoute({
 	exportMode,
 	captionRecordCount,
-	strategy,
+	strategy: _strategy,
 }: {
 	exportMode: "full_video" | "captions_solid_background";
 	captionRecordCount: number;
@@ -41,6 +39,6 @@ export function resolveCapinstaExportRoute({
 	switch (exportMode) {
 		case "full_video":
 		case "captions_solid_background":
-			return strategy === "headless" ? "headless-worker" : "browser-scene";
+			return "browser-scene";
 	}
 }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+/* eslint-disable opencut/prefer-object-params -- compact test fixture factory */
 import {
 	lruEntriesToEvict,
 	projectCacheEntryIds,
@@ -8,7 +9,6 @@ import {
 	isStorageQuotaExceededError,
 	StorageQuotaExceededError,
 } from "./quota";
-import { shouldPersistMediaFileInBrowser } from "./service";
 
 const entry = (
 	id: string,
@@ -26,15 +26,6 @@ const entry = (
 });
 
 describe("storage lifecycle safety", () => {
-	test("server-backed large media is never persisted as a browser file", () => {
-		expect(
-			shouldPersistMediaFileInBrowser({
-				serverAssetId: "server-asset-1",
-			}),
-		).toBe(false);
-		expect(shouldPersistMediaFileInBrowser({})).toBe(true);
-	});
-
 	test("quota errors are recoverable and detected consistently", () => {
 		expect(
 			isStorageQuotaExceededError({

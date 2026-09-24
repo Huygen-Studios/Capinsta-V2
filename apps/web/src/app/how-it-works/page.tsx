@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { BRAND, ROUTES } from "@/site/brand";
+import { BRAND } from "@/site/brand";
 import { BasePage } from "@/app/base-page";
 
 export const metadata: Metadata = {
@@ -23,15 +23,14 @@ export default function HowItWorksPage() {
 						<h3>Import your video</h3>
 						<p>
 							Open the editor and drag in a video file. Supported formats include MP4
-							and WebM. The video is uploaded temporarily to the server so captions can
-							be generated.
+							and WebM. The source file stays in browser storage and is processed locally.
 						</p>
 					</li>
 					<li>
 						<h3>Generate captions</h3>
 						<p>
-							Click the generate button. {BRAND.productName} sends the audio to an
-							AI speech-recognition service that produces a transcript with word-level
+							Click the generate button. With your Gemini API key, the browser sends extracted
+							audio directly to Google Gemini for a transcript with word-level
 							timing. You can choose English, Hinglish, Telgish, or auto-detect mode for
 							mixed Indian-language content.
 						</p>
@@ -55,21 +54,15 @@ export default function HowItWorksPage() {
 
 				<h2>What happens after I leave?</h2>
 				<p>
-					Your project is held temporarily on the server. A heartbeat signal keeps the
-					project alive while you are actively editing. After a period of inactivity
-					(currently 15 minutes without activity), the project, uploaded video, captions,
-					transcripts, and any generated exports are automatically deleted.
-				</p>
-				<p>
-					This means you should always download your exports before closing the browser or
-					navigating away from the editor.
+					Your project and media remain in this browser&apos;s local storage. Return with the
+					same browser profile to continue, or delete the project to remove its local data.
+					Downloaded exports are ordinary local files.
 				</p>
 
 				<h2>What about browser storage?</h2>
 				<p>
-					Some project metadata may be stored locally in your browser for convenience.
-					This local data does not contain your uploaded video files — only references and
-					preferences. You can clear this data at any time through your browser settings.
+					Project data and imported media are stored locally using IndexedDB and OPFS where available.
+					You can delete projects in Capinsta or clear site data in browser settings.
 				</p>
 			</div>
 		</BasePage>

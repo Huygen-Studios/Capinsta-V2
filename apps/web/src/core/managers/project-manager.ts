@@ -9,7 +9,6 @@ import type {
 } from "@/project/types";
 import type { ExportOptions, ExportResult, ExportState } from "@/export";
 import { storageService } from "@/services/storage/service";
-import { deleteServerProject } from "@/capinsta/projectDeletionApi";
 import { toast } from "sonner";
 import { generateUUID } from "@/utils/id";
 import { UpdateProjectSettingsCommand } from "@/commands/project";
@@ -145,13 +144,7 @@ export class ProjectManager {
 				throw new Error(`Project with id ${id} not found`);
 			}
 
-			const project: TProject = {
-				...result.project,
-				capinstaLeftAt: undefined,
-			};
-			if (result.project.capinstaLeftAt) {
-				await storageService.saveProject({ project });
-			}
+			const project: TProject = result.project;
 
 			this.active = project;
 			this.notify();
@@ -216,42 +209,6 @@ export class ProjectManager {
 		} catch (error) {
 			console.error("Failed to save project:", error);
 		}
-	}
-
-	async setCapinstaServerJobId({ jobId }: { jobId: string | null }): Promise<void> {
-		if (!this.active) return;
-		const updatedProject: TProject = {
-			...this.active,
-			capinstaServerJobId: jobId ?? undefined,
-			metadata: { ...this.active.metadata, updatedAt: new Date() },
-		};
-		await storageService.saveProject({ project: updatedProject });
-		this.active = updatedProject;
-		this.updateMetadata(updatedProject);
-		this.notify();
-	}
-
-	async setCapinstaServerMediaAsset({
-		mediaAssetId,
-		mediaAssetVersion,
-		sourceFingerprint,
-	}: {
-		mediaAssetId: string | null;
-		mediaAssetVersion: number | null;
-		sourceFingerprint: string | null;
-	}): Promise<void> {
-		if (!this.active) return;
-		const updatedProject: TProject = {
-			...this.active,
-			capinstaServerMediaAssetId: mediaAssetId ?? undefined,
-			capinstaServerMediaAssetVersion: mediaAssetVersion ?? undefined,
-			capinstaSourceFingerprint: sourceFingerprint ?? undefined,
-			metadata: { ...this.active.metadata, updatedAt: new Date() },
-		};
-		await storageService.saveProject({ project: updatedProject });
-		this.active = updatedProject;
-		this.updateMetadata(updatedProject);
-		this.notify();
 	}
 
 	async export({ options }: { options: ExportOptions }): Promise<ExportResult> {
@@ -324,7 +281,6 @@ export class ProjectManager {
 
 		try {
 			for (const id of uniqueIds) {
-				await deleteServerProject({ projectId: id });
 				await Promise.all([
 					storageService.deleteProjectMedia({ projectId: id }),
 					storageService.deleteProject({ id }),
@@ -622,10 +578,6 @@ export class ProjectManager {
 			console.error("Failed to generate project thumbnail on exit:", error);
 		}
 
-		this.active = {
-			...this.active,
-			capinstaLeftAt: new Date().toISOString(),
-		};
 		await storageService.saveProject({ project: this.active });
 		this.updateMetadata(this.active);
 		this.notify();
@@ -642,10 +594,14 @@ export class ProjectManager {
 			project.name.toLowerCase().includes(searchQuery.toLowerCase()),
 		);
 
-		const [key, order] = sortOption.split("-") as [
-			TProjectSortKey,
-			"asc" | "desc",
-		];
+		const order = sortOption.endsWith("-asc") ? "asc" : "desc";
+		const key: TProjectSortKey = sortOption.startsWith("createdAt-")
+			? "createdAt"
+			: sortOption.startsWith("updatedAt-")
+				? "updatedAt"
+				: sortOption.startsWith("duration-")
+					? "duration"
+					: "name";
 
 		const sortedProjects = [...filteredProjects].sort((a, b) => {
 			const aValue = a[key];

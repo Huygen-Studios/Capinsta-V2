@@ -59,7 +59,7 @@ const featureGroups = [
 		heading: "Privacy and storage",
 		items: [
 			"No account required to use the editor",
-			"Uploaded videos are processed and held only during the editing session",
+			"Source videos and projects stay in local browser storage",
 			"Automatic deletion after a period of inactivity",
 			"Your media is never used for training or resale",
 		],

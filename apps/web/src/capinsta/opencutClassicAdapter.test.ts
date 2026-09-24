@@ -15,18 +15,18 @@ describe("OpenCut Classic Capinsta adapter", () => {
     expect(result.document.id).toBe("capinsta-doc-sample-video-001")
     expect(result.captions[0]).toEqual(
       expect.objectContaining({
-        text: "Build the edit then",
+		text: "Build the edit",
         startTime: 0.42,
       }),
     )
     expect(result.captions[1]).toEqual(
       expect.objectContaining({
-        text: "captions follow",
-        startTime: 2.78,
+		text: "then captions follow",
+		startTime: 2.32,
       }),
     )
-    expect(result.captions[0]?.duration).toBeCloseTo(2.359)
-    expect(result.captions[1]?.duration).toBeCloseTo(1.76)
+		expect(result.captions[0]?.duration).toBeCloseTo(1.77)
+		expect(result.captions[1]?.duration).toBeCloseTo(2.35)
     expect(result.captions[0]?.style?.color).toBe("#FFFFFF")
     expect(result.source.sourceAssetName).toBe("sample-founder-intro.mp4")
   })
@@ -37,8 +37,8 @@ describe("OpenCut Classic Capinsta adapter", () => {
     )
     const cues = neutralCaptionDocumentToSubtitleCues({ document })
 
-    expect(cues.map((cue) => cue.startTime)).toEqual([0.42, 2.78])
-    expect(cues[0]?.duration).toBeCloseTo(2.359)
-    expect(cues[1]?.duration).toBeCloseTo(1.76)
+		expect(cues.map((cue) => cue.startTime)).toEqual([0.42, 2.32])
+		expect(cues[0]?.duration).toBeCloseTo(1.77)
+		expect(cues[1]?.duration).toBeCloseTo(2.35)
   })
 })

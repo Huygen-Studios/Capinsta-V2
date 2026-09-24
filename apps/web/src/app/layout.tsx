@@ -1,19 +1,12 @@
 import { ThemeProvider } from "next-themes";
-import Script from "next/script";
 import type { Viewport } from "next";
 import "react-loading-skeleton/dist/skeleton.css";
 import "./globals.css";
 import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { baseMetaData, viewportTheme } from "./metadata";
-import { webEnv } from "@/env/web";
 import { Inter } from "next/font/google";
 import { DevToolsLoader } from "./dev-tools-loader";
-import { RouteCookieConsent } from "@/components/route-cookie-consent";
-import { RenderRouteExclusions } from "@/components/render-route-exclusions";
-import { GoogleAnalyticsProvider } from "@/components/analytics/google-analytics-provider";
-import { PostHogProvider } from "@/components/analytics/posthog-provider";
-import { SystemStatusStrip } from "@/components/system/system-status-strip";
 
 const siteFont = Inter({
 	subsets: ["latin"],
@@ -34,8 +27,6 @@ export default function RootLayout({
 			<body
 				className={`${siteFont.variable} font-sans antialiased`}
 			>
-				<GoogleAnalyticsProvider />
-				<PostHogProvider />
 				<ThemeProvider
 					attribute="class"
 					defaultTheme="system"
@@ -49,24 +40,7 @@ export default function RootLayout({
 						    always loaded in dev, including for the headless export page,
 						    injecting purple overlay boxes into export screenshots. */}
 						<DevToolsLoader />
-						<RenderRouteExclusions>
-							<SystemStatusStrip />
-							<Toaster />
-							{webEnv.NODE_ENV === "production" ? (
-								<Script
-									src="https://cdn.databuddy.cc/databuddy.js"
-									strategy="afterInteractive"
-									async
-									data-client-id="UP-Wcoy5arxFeK7oyjMMZ"
-									data-track-attributes={false}
-									data-track-errors={true}
-									data-track-outgoing-links={false}
-									data-track-web-vitals={false}
-									data-track-sessions={false}
-								/>
-							) : null}
-							<RouteCookieConsent />
-						</RenderRouteExclusions>
+						<Toaster />
 						{children}
 					</TooltipProvider>
 				</ThemeProvider>

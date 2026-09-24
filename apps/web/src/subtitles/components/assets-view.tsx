@@ -34,38 +34,20 @@ import type { TranscriptionLanguage } from "@/transcription/types";
 import type { CapinstaCaptionOutput } from "@/capinsta/types";
 import { insertCaptionDocumentAsTextTrack } from "@/subtitles/insert";
 import { parseSubtitleFile } from "@/subtitles/parse";
-import { sampleCapinstaTranscriptV1 } from "@/capinsta/sampleTranscript";
 import { ensureAudioForCaptions } from "@/capinsta/audioForCaptions";
 import { resolveCaptionUploadFile } from "@/capinsta/captionMediaAsset";
-import {
-	verifyProjectMediaAsset,
-	uploadProjectMediaAsset,
-} from "@/capinsta/mediaAssetApi";
 import {
 	captionJobButtonLabel,
 	captionJobReducer,
 	IDLE_CAPTION_JOB_STATE,
 	isCaptionJobRunning,
 } from "@/capinsta/captionJobState";
-import {
-	getCapinstaApiBaseUrl,
-	getCapinstaJobPollIntervalMs,
-	getCapinstaJobTimeoutMs,
-	isAiCaptionsEnabled,
-	isCapinstaDebugEnabled,
-} from "@/capinsta/featureFlags";
-import { usePublicRuntimeFlag } from "@/admin/use-public-runtime-flag";
 import { capinstaTranscriptToOpenCutSubtitleImport } from "@/capinsta/opencutClassicAdapter";
 import { buildCapinstaCaptionTimingDiagnostics } from "@/capinsta/adapter";
 import { importedSubtitleCuesToCaptionDocument } from "@/capinsta/importedCaptionDocument";
-import {
-	CapinstaApiError,
-	cancelCapinstaJob,
-	checkCapinstaHealth,
-	normalizeCapinstaJobToTranscript,
-	startCapinstaCaptionJob,
-} from "@/capinsta/apiClient";
-import { pollCapinstaJobUntilDone } from "@/capinsta/jobPolling";
+import { generateGeminiTranscript } from "@/capinsta/gemini/transcription";
+import { readGeminiKey } from "@/capinsta/gemini/key-storage";
+import { GeminiApiKeyDialog } from "@/capinsta/components/GeminiApiKeyDialog";
 import { Spinner } from "@/components/ui/spinner";
 import {
 	Section,
@@ -101,60 +83,6 @@ const DIAGNOSTIC_BUTTON_VARIANT: Record<
 	caution: "caution",
 	error: "destructive-foreground",
 };
-
-function getBackendCaptionProgressState({
-	status,
-}: {
-	status: string | null | undefined;
-}): {
-	status:
-		| "preparing"
-		| "extracting_audio"
-		| "transcribing"
-		| "generating_captions"
-		| "importing_captions";
-	message: string;
-} {
-	switch ((status ?? "").trim().toLowerCase()) {
-		case "uploaded":
-		case "queued":
-		case "pending":
-		case "started":
-		case "running":
-		case "processing":
-			return { status: "transcribing", message: "Transcribing speech..." };
-		case "extracting":
-		case "extracting_audio":
-			return { status: "extracting_audio", message: "Extracting audio..." };
-		case "transcribing":
-			return { status: "transcribing", message: "Transcribing speech..." };
-		case "romanizing":
-			return {
-				status: "transcribing",
-				message: "Normalizing transcript text...",
-			};
-		case "aligning":
-			return { status: "transcribing", message: "Aligning word timings..." };
-		case "normalizing":
-		case "chunking":
-		case "generating_captions":
-		case "rendering":
-		case "rendering_captions":
-		case "finalizing":
-		case "saving":
-			return {
-				status: "generating_captions",
-				message: "Building editable captions...",
-			};
-		case "importing_captions":
-			return {
-				status: "importing_captions",
-				message: "Importing captions into timeline...",
-			};
-		default:
-			return { status: "transcribing", message: "Transcribing speech..." };
-	}
-}
 
 type ProcessingState =
 	| { status: "idle"; error: string | null; warnings: string[] }
@@ -207,6 +135,7 @@ export function Captions() {
 	const [warnings, setWarnings] = useState<string[]>([]);
 	const [deleteAllOpen, setDeleteAllOpen] = useState(false);
 	const [showSpeakers, setShowSpeakers] = useState(false);
+	const [geminiKeyDialogOpen, setGeminiKeyDialogOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const captionJobRunningRef = useRef(false);
@@ -227,14 +156,7 @@ export function Captions() {
 			);
 		return Boolean(track && "hidden" in track && track.hidden);
 	});
-	const isSampleImportEnabled = usePublicRuntimeFlag({
-		key: "sample_import_enabled",
-	});
-	const isAiCaptionGenerationEnabled = isAiCaptionsEnabled();
-	const isCapinstaDebug = isCapinstaDebugEnabled();
-	const capinstaApiBaseUrl = getCapinstaApiBaseUrl();
-	const capinstaJobTimeoutMs = getCapinstaJobTimeoutMs();
-	const capinstaJobPollIntervalMs = getCapinstaJobPollIntervalMs();
+	const isAiCaptionGenerationEnabled = true;
 	const mediaAssets = useEditor((e) => e.media.getAssets());
 	const captionCandidateAssets = useMemo(
 		() =>
@@ -258,16 +180,15 @@ export function Captions() {
 		captionCandidateAssets[0] ??
 		null;
 	const selectedMediaValue = selectedMediaAsset?.id ?? "";
-	const isSelectedMediaUploadable =
-		selectedMediaAsset?.type === "video" &&
-		/\.(mp4|mov|m4v|webm)$/i.test(selectedMediaAsset.file.name);
+	const isSelectedMediaUploadable = Boolean(
+		selectedMediaAsset &&
+			(selectedMediaAsset.type === "video" || selectedMediaAsset.type === "audio"),
+	);
 	const aiCaptionDisabledReason = !selectedMediaAsset
-		? "Select an imported local video file to generate captions."
+		? "Select imported local media to generate captions."
 		: !isSelectedMediaUploadable
-			? "Select an imported local MP4, MOV, or WebM video file to generate captions."
-			: !capinstaApiBaseUrl
-				? "Set NEXT_PUBLIC_CAPINSTA_API_BASE_URL to generate captions."
-				: null;
+			? "Select an imported local video or audio file to generate captions."
+			: null;
 
 	useEffect(() => {
 		return () => {
@@ -286,50 +207,6 @@ export function Captions() {
 			message: "Caption generation cancelled because selected media changed.",
 		});
 	}, [selectedMediaValue]);
-
-	const handleImportSampleCaptions = (event: React.MouseEvent) => {
-		event.preventDefault();
-		event.stopPropagation();
-		setWarnings([]);
-		dispatchImportProcessing({
-			type: "start",
-			step: "Importing sample captions...",
-		});
-		try {
-			const result = capinstaTranscriptToOpenCutSubtitleImport(
-				sampleCapinstaTranscriptV1,
-			);
-			const record = insertCaptionDocumentAsTextTrack({
-				editor,
-				captions: result.captions,
-				document: result.document,
-			});
-
-			if (record === null) {
-				dispatchImportProcessing({
-					type: "fail",
-					error: "No sample captions were generated",
-				});
-				return;
-			}
-
-			dispatchImportProcessing({
-				type: "succeed",
-				warnings: [
-					`Imported Capinsta sample captions from ${result.source.sourceAssetName}.`,
-				],
-			});
-		} catch (error) {
-			console.error("Capinsta sample caption import failed:", error);
-			dispatchImportProcessing({
-				type: "fail",
-				error:
-					error instanceof Error
-						? error.message
-						: "An unexpected error occurred",
-			});
-		}
-	};
 
 	const cacheAudioMetadata = ({
 		videoAssetId,
@@ -370,22 +247,19 @@ export function Captions() {
 				type: "error",
 				message:
 					aiCaptionDisabledReason ??
-					"Select an imported local video file to generate captions.",
+					"Select imported local media to generate captions.",
 			});
 			return;
 		}
-		if (!capinstaApiBaseUrl) {
-			dispatchCaptionJob({
-				type: "error",
-				message: "Set NEXT_PUBLIC_CAPINSTA_API_BASE_URL to generate captions.",
-			});
+		const apiKey = readGeminiKey();
+		if (!apiKey) {
+			setGeminiKeyDialogOpen(true);
 			return;
 		}
 
 		const abortController = new AbortController();
 		abortControllerRef.current = abortController;
 		captionJobRunningRef.current = true;
-		let activeBackendJobId: string | null = null;
 		setWarnings([]);
 		dispatchCaptionJob({
 			type: "start",
@@ -393,17 +267,8 @@ export function Captions() {
 			message: "Preparing media...",
 		});
 		try {
-			console.debug("[Capinsta captions] Selected media", {
-				id: selectedMediaAsset.id,
-				name: selectedMediaAsset.name,
-			});
-			await checkCapinstaHealth({
-				baseUrl: capinstaApiBaseUrl,
-				signal: abortController.signal,
-			});
-
 			const projectId = editor.project.getActive().metadata.id;
-			const sourceVideoFile = await resolveCaptionUploadFile({
+			const sourceMediaFile = await resolveCaptionUploadFile({
 				projectId,
 				mediaAsset: selectedMediaAsset,
 				loadMediaAsset: (args) => storageService.loadMediaAsset(args),
@@ -413,7 +278,6 @@ export function Captions() {
 				status: "extracting_audio",
 				message: "Extracting audio...",
 			});
-			console.debug("[Capinsta captions] Ensuring reusable audio source");
 			const audioForCaptions = await ensureAudioForCaptions({
 				videoAssetId: selectedMediaAsset.id,
 				getAssets: () =>
@@ -421,224 +285,47 @@ export function Captions() {
 						.getAssets()
 						.map((asset) =>
 							asset.id === selectedMediaAsset.id
-								? { ...asset, file: sourceVideoFile }
+								? { ...asset, file: sourceMediaFile }
 								: asset,
 						),
 				cacheAudioMetadata,
 			});
-			const captionUploadFile = audioForCaptions.file;
-			console.debug("[Capinsta captions] Audio source ready", {
-				assetId: audioForCaptions.assetId,
-				sourceAssetId: audioForCaptions.sourceAssetId,
-				wasReused: audioForCaptions.wasReused,
-				sourceBytes: sourceVideoFile.size,
-				captionAudioBytes: captionUploadFile.size,
-			});
-
-			dispatchCaptionJob({
-				type: "progress",
-				status: "transcribing",
-				message: "Transcribing speech...",
-			});
-			console.debug("[Capinsta captions] Starting transcription request");
-			const activeProject = editor.project.getActive();
-			const cachedAssetId = activeProject.capinstaServerMediaAssetId;
-			const cachedFingerprint = activeProject.capinstaSourceFingerprint;
-			const localFingerprint = `${captionUploadFile.name}_${captionUploadFile.size}_${captionUploadFile.lastModified || 0}`;
-
-			let mediaAssetIdToUse: string | undefined = undefined;
-
-			if (cachedAssetId && cachedFingerprint === localFingerprint) {
-				try {
-					const isVerified = await verifyProjectMediaAsset({
-						assetId: cachedAssetId,
-					});
-					if (isVerified) {
-						mediaAssetIdToUse = cachedAssetId;
-						console.debug(
-							"[Capinsta captions] Reusing verified server media asset ID:",
-							mediaAssetIdToUse,
-						);
-					}
-				} catch (err) {
-					console.warn(
-						"[Capinsta captions] Failed to verify cached media asset:",
-						err,
-					);
-				}
-			}
-
-			if (!mediaAssetIdToUse) {
-				dispatchCaptionJob({
-					type: "progress",
-					status: "preparing",
-					message: "Uploading extracted audio to media service...",
-				});
-				const uploadResult = await uploadProjectMediaAsset({
-					projectId,
-					file: captionUploadFile,
-					signal: abortController.signal,
-				});
-				mediaAssetIdToUse = uploadResult.assetId;
-
-				await editor.project.setCapinstaServerMediaAsset({
-					mediaAssetId: mediaAssetIdToUse,
-					mediaAssetVersion: 1,
-					sourceFingerprint: localFingerprint,
-				});
-				console.debug(
-					"[Capinsta captions] Uploaded media asset successfully. New ID:",
-					mediaAssetIdToUse,
-				);
-			}
-
-			let startedJob;
-			try {
-				startedJob = await startCapinstaCaptionJob({
-					baseUrl: capinstaApiBaseUrl,
-					mediaAssetId: mediaAssetIdToUse,
-					projectId,
-					languageMode: selectedAudioLanguage,
-					captionOutput: selectedCaptionOutput,
-					timelineOffsetUs: audioForCaptions.timelineOffsetUs,
-					timelineDurationUs: audioForCaptions.timelineDurationUs,
-					audioOrigin: audioForCaptions.audioOrigin,
-					signal: abortController.signal,
-				});
-			} catch (err: unknown) {
-				if (
-					err instanceof CapinstaApiError &&
-					(err.status === 404 || err.status === 410) &&
-					mediaAssetIdToUse === cachedAssetId
-				) {
-					console.warn(
-						"[Capinsta captions] Cached server media asset ID was not found or gone (404/410). Clearing cache and re-uploading...",
-						err,
-					);
-					await editor.project.setCapinstaServerMediaAsset({
-						mediaAssetId: null,
-						mediaAssetVersion: 1,
-						sourceFingerprint: null,
-					});
-					mediaAssetIdToUse = undefined;
-
-					dispatchCaptionJob({
-						type: "progress",
-						status: "preparing",
-						message: "Re-uploading extracted audio to media service...",
-					});
-					const uploadResult = await uploadProjectMediaAsset({
-						projectId,
-						file: captionUploadFile,
-						signal: abortController.signal,
-					});
-					mediaAssetIdToUse = uploadResult.assetId;
-
-					await editor.project.setCapinstaServerMediaAsset({
-						mediaAssetId: mediaAssetIdToUse,
-						mediaAssetVersion: 1,
-						sourceFingerprint: localFingerprint,
-					});
-					console.debug(
-						"[Capinsta captions] Re-uploaded media asset successfully. New ID:",
-						mediaAssetIdToUse,
-					);
-
-					dispatchCaptionJob({
-						type: "progress",
-						status: "transcribing",
-						message: "Transcribing speech...",
-					});
-
-					startedJob = await startCapinstaCaptionJob({
-						baseUrl: capinstaApiBaseUrl,
-						mediaAssetId: mediaAssetIdToUse,
-						projectId,
-						languageMode: selectedAudioLanguage,
-						captionOutput: selectedCaptionOutput,
-						timelineOffsetUs: audioForCaptions.timelineOffsetUs,
-						timelineDurationUs: audioForCaptions.timelineDurationUs,
-						audioOrigin: audioForCaptions.audioOrigin,
-						signal: abortController.signal,
-					});
-				} else {
-					throw err;
-				}
-			}
-
-			activeBackendJobId = startedJob.job_id;
-			await editor.project.setCapinstaServerJobId({
-				jobId: startedJob.job_id,
-			});
-			dispatchCaptionJob({
-				type: "progress",
-				status: "transcribing",
-				message: "Transcribing speech...",
-				activeJobId: startedJob.job_id,
-			});
-
-			const completedJob = await pollCapinstaJobUntilDone({
-				baseUrl: capinstaApiBaseUrl,
-				jobId: startedJob.job_id,
-				intervalMs: capinstaJobPollIntervalMs,
-				maxElapsedMs: capinstaJobTimeoutMs,
-				signal: abortController.signal,
-				onProgress: (job) => {
-					const progress =
-						typeof job.progress === "number" && job.progress >= 0
-							? job.progress
-							: null;
-					const progressState = getBackendCaptionProgressState({
-						status: job.status,
-					});
-					dispatchCaptionJob({
-						type: "progress",
-						status: progressState.status,
-						message:
-							job.message ||
-							job.details ||
-							(progress
-								? `${progressState.message} ${progress}%`
-								: progressState.message),
-						progressPercent: progress,
-						activeJobId: startedJob.job_id,
-					});
-				},
-				onStatusHistory: (history) => {
-					const latest = history.at(-1);
-					const unknownStatus =
-						latest?.normalizedStatus === "unknown"
-							? latest.rawStatus || "(empty)"
-							: null;
-					dispatchCaptionJob({
-						type: "status_history",
-						history,
-						debugWarning:
-							isCapinstaDebug && unknownStatus
-								? `Unknown backend status "${unknownStatus}" is being treated as processing.`
-								: null,
-					});
-				},
-			});
-			console.debug("[Capinsta captions] Transcription completed", {
-				jobId: completedJob.job_id,
-			});
-			await editor.project.setCapinstaServerJobId({ jobId: null });
-			activeBackendJobId = null;
-			dispatchCaptionJob({
-				type: "progress",
-				status: "generating_captions",
-				message: "Building editable captions...",
-				progressPercent: 90,
-			});
-			const transcript = normalizeCapinstaJobToTranscript({
-				job: completedJob,
+			const estimatedDurationUs = Math.max(
+				Math.round((selectedMediaAsset.duration ?? 0) * 1_000_000),
+				audioForCaptions.timelineOffsetUs +
+					(audioForCaptions.timelineDurationUs ??
+						Math.round((audioForCaptions.duration ?? 0) * 1_000_000)),
+			);
+			const nextWarnings: string[] = [];
+			const transcript = await generateGeminiTranscript({
+				audioFile: audioForCaptions.file,
+				apiKey,
 				sourceAsset: {
 					assetId: selectedMediaAsset.id,
 					assetName: selectedMediaAsset.name,
-					durationSeconds: selectedMediaAsset.duration,
 					mimeType: selectedMediaAsset.file.type,
 				},
+				languageMode: selectedAudioLanguage,
+				outputLanguage: selectedCaptionOutput,
+				projectDurationUs: estimatedDurationUs,
+				timelineOffsetUs: audioForCaptions.timelineOffsetUs,
+				audioOrigin: audioForCaptions.audioOrigin,
+				signal: abortController.signal,
+				onProgress: ({ stage, message }) => {
+					dispatchCaptionJob({
+						type: "progress",
+						status:
+							stage === "extracting"
+								? "extracting_audio"
+								: stage === "uploading" ||
+									  stage === "waiting" ||
+									  stage === "transcribing"
+									? "transcribing"
+									: "generating_captions",
+						message,
+					});
+				},
+				onWarning: (warning) => nextWarnings.push(warning),
 			});
 			const result = capinstaTranscriptToOpenCutSubtitleImport(transcript);
 			if (process.env.NODE_ENV === "development") {
@@ -667,15 +354,10 @@ export function Captions() {
 				return;
 			}
 
-			console.debug("[Capinsta captions] Captions imported", {
-				trackId: record.openCutTrackId,
-				captionCount: result.captions.length,
-			});
-
-			setWarnings([`Generated AI captions for ${selectedMediaAsset.name}.`]);
+			setWarnings(["Generated with Gemini AI.", ...nextWarnings]);
 			dispatchCaptionJob({
 				type: "done",
-				message: "Done",
+				message: "Captions ready.",
 			});
 		} catch (error) {
 			if (error instanceof DOMException && error.name === "AbortError") {
@@ -685,7 +367,6 @@ export function Captions() {
 				});
 				return;
 			}
-			console.error("Capinsta AI caption generation failed:", error);
 			dispatchCaptionJob({
 				type: "error",
 				message:
@@ -694,9 +375,6 @@ export function Captions() {
 						: "An unexpected error occurred",
 			});
 		} finally {
-			if (activeBackendJobId) {
-				await editor.project.setCapinstaServerJobId({ jobId: null });
-			}
 			captionJobRunningRef.current = false;
 			if (abortControllerRef.current === abortController) {
 				abortControllerRef.current = null;
@@ -707,20 +385,8 @@ export function Captions() {
 	const handleCancelCaptionJob = async (event: React.MouseEvent) => {
 		event.preventDefault();
 		event.stopPropagation();
-		const jobId = captionJob.activeJobId;
 		abortControllerRef.current?.abort();
 		captionJobRunningRef.current = false;
-		if (jobId && capinstaApiBaseUrl) {
-			try {
-				await cancelCapinstaJob({
-					baseUrl: capinstaApiBaseUrl,
-					jobId,
-				});
-			} catch (error) {
-				console.warn("Failed to cancel Capinsta backend job:", error);
-			}
-		}
-		await editor.project.setCapinstaServerJobId({ jobId: null });
 		dispatchCaptionJob({
 			type: "error",
 			message: "Caption generation cancelled.",
@@ -901,6 +567,15 @@ export function Captions() {
 							title={EDITOR_HELP_CONTENT.captions.title}
 							description={EDITOR_HELP_CONTENT.captions.description}
 						/>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={() => setGeminiKeyDialogOpen(true)}
+							disabled={isProcessing}
+						>
+							Gemini key
+						</Button>
 						{!isProcessing &&
 							activeDiagnostics.map((diagnostic) => (
 								<Tooltip key={diagnostic.id}>
@@ -979,6 +654,10 @@ export function Captions() {
 			}
 			ref={containerRef}
 		>
+			<GeminiApiKeyDialog
+				open={geminiKeyDialogOpen}
+				onOpenChange={setGeminiKeyDialogOpen}
+			/>
 			<input
 				ref={fileInputRef}
 				type="file"
@@ -1084,11 +763,6 @@ export function Captions() {
 									{captionStatusMessage}
 								</p>
 							)}
-							{isCapinstaDebug && captionJob.debugWarning && (
-								<p className="text-amber-600 text-xs">
-									{captionJob.debugWarning}
-								</p>
-							)}
 							{isCaptionProcessing && (
 								<Button
 									type="button"
@@ -1105,18 +779,6 @@ export function Captions() {
 								</p>
 							)}
 						</>
-					)}
-					{isSampleImportEnabled && (
-						<Button
-							type="button"
-							variant="outline"
-							className="w-full"
-							onClick={handleImportSampleCaptions}
-							disabled={isProcessing}
-						>
-							<HugeiconsIcon icon={MagicWand05Icon} className="mr-1" />
-							Import Sample Captions
-						</Button>
 					)}
 					{error && (
 						<div className="bg-destructive/10 border-destructive/20 rounded-md border p-3">

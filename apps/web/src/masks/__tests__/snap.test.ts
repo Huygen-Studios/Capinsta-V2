@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createCanvas } from "@napi-rs/canvas";
 import {
 	findClosestPointOnFreeformSegment,
 	getFreeformPathClosedStateAfterPointRemoval,
@@ -21,6 +22,11 @@ import type {
 	SplitMaskParams,
 	TextMaskParams,
 } from "@/masks/types";
+
+Object.defineProperty(globalThis, "document", {
+	configurable: true,
+	value: { createElement: () => createCanvas(1, 1) },
+});
 
 const bounds: ElementBounds = {
 	cx: 200,

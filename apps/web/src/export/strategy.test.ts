@@ -6,12 +6,12 @@ import {
 } from "./strategy";
 
 describe("CapInsta export strategy", () => {
-	test("defaults to the headless Playwright worker", () => {
+	test("defaults to the browser scene exporter", () => {
 		expect(resolveCapinstaExportStrategy()).toBe(
 			DEFAULT_CAPINSTA_EXPORT_STRATEGY,
 		);
-		expect(resolveCapinstaExportStrategy({ configured: " HEADLESS " })).toBe(
-			"headless",
+		expect(resolveCapinstaExportStrategy({ configured: " BROWSER-SCENE " })).toBe(
+			"browser-scene",
 		);
 	});
 
@@ -26,12 +26,10 @@ describe("CapInsta export strategy", () => {
 			resolveCapinstaExportStrategy({
 				legacyForeignObjectFallback: "TRUE",
 			}),
-		).toThrow(
-			"NEXT_PUBLIC_CAPINSTA_EXPORT_FALLBACK_FOREIGNOBJECT is no longer supported",
-		);
+		).toThrow("legacy DOM rasterization fallback is no longer supported");
 	});
 
-	test("routes every captioned export mode through the headless worker", () => {
+	test("routes every captioned export mode through the browser scene exporter", () => {
 		for (const exportMode of [
 			"full_video",
 			"captions_solid_background",
@@ -40,9 +38,9 @@ describe("CapInsta export strategy", () => {
 				resolveCapinstaExportRoute({
 					exportMode,
 					captionRecordCount: 1,
-					strategy: "headless",
+					strategy: "browser-scene",
 				}),
-			).toBe("headless-worker");
+			).toBe("browser-scene");
 		}
 	});
 
@@ -51,7 +49,7 @@ describe("CapInsta export strategy", () => {
 			resolveCapinstaExportRoute({
 				exportMode: "full_video",
 				captionRecordCount: 0,
-				strategy: "headless",
+				strategy: "browser-scene",
 			}),
 		).toBe("browser-scene");
 	});

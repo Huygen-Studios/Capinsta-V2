@@ -66,13 +66,9 @@ import { ProjectInfoDialog } from "@/project/components/project-info-dialog";
 import { RenameProjectDialog } from "@/project/components/rename-project-dialog";
 import { cn } from "@/utils/ui";
 import { ChangelogNotification } from "@/changelog/components/changelog-notification";
-import { useExpiredProjectCleanup } from "@/capinsta/useExpiredProjectCleanup";
-import { AccountMenu } from "@/components/auth/account-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoStatic } from "@/components/logo";
-import { storageService } from "@/services/storage/service";
 import { ProjectsOnboardingCard } from "@/components/onboarding/projects-onboarding-card";
-import { PostEditorRatingModal } from "@/components/feedback/post-editor-rating-modal";
 
 const formatProjectDuration = ({
 	duration,
@@ -103,13 +99,6 @@ function projectAccent(projectId: string): string {
 	return PROJECT_ACCENTS[total % PROJECT_ACCENTS.length] ?? PROJECT_ACCENTS[0];
 }
 
-function formatBytes(bytes: number): string {
-	if (bytes <= 0) return "0 MB";
-	const mb = bytes / (1024 * 1024);
-	if (mb < 1024) return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
-	return `${(mb / 1024).toFixed(2)} GB`;
-}
-
 export default function ProjectsPage() {
 	const { searchQuery, sortKey, sortOrder, viewMode } = useProjectsStore();
 	const editor = useEditor();
@@ -120,7 +109,6 @@ export default function ProjectsPage() {
 	const projectsToDisplay = useEditor((e) =>
 		e.project.getFilteredAndSortedProjects({ searchQuery, sortOption }),
 	);
-	useExpiredProjectCleanup({ enabled: isInitialized });
 
 	useEffect(() => {
 		if (!editor.project.getIsInitialized()) {
@@ -130,7 +118,6 @@ export default function ProjectsPage() {
 
 	return (
 		<div className="projects-shell min-h-screen bg-background text-foreground">
-			<PostEditorRatingModal />
 			<MigrationDialog />
 			<StoragePersistenceDialog />
 			<ChangelogNotification />
@@ -221,7 +208,6 @@ function ProjectsHeader() {
 					<SearchBar className="hidden md:block" />
 					<NewProjectButton />
 					<ThemeToggle />
-					<AccountMenu compact />
 				</div>
 			</div>
 			<SearchBar className="block md:hidden mb-4" />
@@ -237,7 +223,6 @@ const SORT_LABELS: Record<TProjectSortKey, string> = {
 };
 
 function ProjectsToolbar({ projectIds }: { projectIds: string[] }) {
-	const [isRecoveringStorage, setIsRecoveringStorage] = useState(false);
 	const {
 		selectedProjectIds,
 		sortKey,
@@ -261,34 +246,6 @@ function ProjectsToolbar({ projectIds }: { projectIds: string[] }) {
 			return;
 		}
 		clearSelectedProjects();
-	};
-
-	const handleRecoverStorage = async () => {
-		setIsRecoveringStorage(true);
-		try {
-			const result = await storageService.recoverLegacyBrowserStorage();
-			const message =
-				result.requiresReimportProjects.length > 0
-					? `Recovered ${formatBytes(result.reclaimedBytes)}. ${result.requiresReimportProjects.length} project(s) still need re-import because no verified backend media asset exists.`
-					: `Recovered ${formatBytes(result.reclaimedBytes)} from duplicate browser video storage.`;
-			toast.success("Storage recovery complete", {
-				description: `${message} Estimated reclaimable: ${formatBytes(result.estimatedReclaimableBytes)}.`,
-			});
-			if (result.errors.length > 0) {
-				toast.warning("Some storage entries could not be checked", {
-					description: `${result.errors.length} scoped item(s) failed; no unverified local-only media was deleted.`,
-				});
-			}
-		} catch (error) {
-			toast.error("Storage recovery failed", {
-				description:
-					error instanceof Error
-						? error.message
-						: "Please retry after refreshing the page.",
-			});
-		} finally {
-			setIsRecoveringStorage(false);
-		}
 	};
 
 	return (
@@ -365,18 +322,7 @@ function ProjectsToolbar({ projectIds }: { projectIds: string[] }) {
 					))}
 				</div>
 			</div>
-			{selectedProjectCount > 0 ? (
-				<ProjectActions />
-			) : (
-				<Button
-					variant="outline"
-					size="sm"
-					onClick={handleRecoverStorage}
-					disabled={isRecoveringStorage}
-				>
-					{isRecoveringStorage ? "Recovering…" : "Recover storage"}
-				</Button>
-			)}
+			{selectedProjectCount > 0 ? <ProjectActions /> : null}
 		</div>
 	);
 }

@@ -1,5 +1,5 @@
-import WaitlistPage from "../waitlist/page";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default WaitlistPage;
+export default function EarlyAccessPage() {
+	redirect("/projects");
+}

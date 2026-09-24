@@ -1,25 +1,14 @@
 import type { EditorCore } from "@/core";
 import type { RootNode } from "@/services/renderer/nodes/root-node";
-import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
 import type { ExportOptions, ExportResult } from "@/export";
-import { formatExportApiError, normalizeExportError } from "@/export";
+import { normalizeExportError } from "@/export";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { SceneExporter } from "@/services/renderer/scene-exporter";
 import { buildScene } from "@/services/renderer/scene-builder";
 import { createTimelineAudioBuffer } from "@/media/audio";
 import { formatTimecode } from "opencut-wasm";
-import { TICKS_PER_SECOND } from "@/wasm";
 import { downloadBlob } from "@/utils/browser";
 import { buildCapinstaPreviewTracks } from "@/capinsta/captionTimelineSync";
-import { buildCapinstaApiUrl } from "@/capinsta/api-url";
-import { getCapinstaApiBaseUrl } from "@/capinsta/featureFlags";
-import { readJsonApiResponse } from "@/capinsta/api-response";
-import {
-	validateCapinstaPreExport,
-	validatePreviewExportStyleParity,
-	validateCapinstaHeadlessExport,
-} from "@/capinsta/export/capinsta-export-validation";
-import { resolveCapinstaClipStyle } from "@/capinsta/styles/styleMigration";
 import { getVisibleCapinstaCaptionRecords } from "@/capinsta/captionVisibility";
 import {
 	resolveExportSceneBackground,
@@ -29,15 +18,7 @@ import {
 	applyExportLayerPolicy,
 	exportLayerPolicyForMode,
 } from "@/export/layer-policy";
-import { createExportRequestFormData } from "@/export/request";
 import { validateExportOutput } from "@/export/output-limits";
-import {
-	resolveCapinstaExportRoute,
-	resolveCapinstaExportStrategy,
-} from "@/export/strategy";
-import { ensureServerMediaAssetForCaptions } from "@/capinsta/captionMediaAsset";
-import { verifyProjectMediaAsset } from "@/capinsta/mediaAssetApi";
-import { storageService } from "@/services/storage/service";
 
 type SnapshotResult =
 	| { success: true; blob: Blob; filename: string }
@@ -229,12 +210,9 @@ export class RendererManager {
 				projectBackground: activeProject.settings.background,
 			});
 
-			// CapInsta captions use one authoritative export renderer: the
-			// authenticated /render page controlled by the Playwright worker.
-			// The canvas/WASM/TextNode/CapinstaCaptionNode pipeline renders ZERO
-			// caption pixels. We still run tracks through buildCapinstaPreviewTracks
-			// so the capinsta carrier TextElements get hidden:true before scene
-			// building (defense in depth — they also suppress in renderTextToContext).
+			// Carrier text stays hidden in the normal scene. SceneExporter resolves
+			// the active CapInsta clip and word for each frame, then draws the shared
+			// preset render model onto the encoding canvas.
 			const allCapinstaRecords = activeProject.capinstaCaptionDocuments ?? [];
 			const capinstaRecords = getVisibleCapinstaCaptionRecords({
 				records: allCapinstaRecords,
@@ -252,18 +230,6 @@ export class RendererManager {
 				tracks: captionPreparedTracks,
 				policy: layerPolicy,
 			});
-			const exportStrategy = resolveCapinstaExportStrategy({
-				configured: process.env.NEXT_PUBLIC_CAPINSTA_EXPORT_STRATEGY,
-				legacyForeignObjectFallback:
-					process.env.NEXT_PUBLIC_CAPINSTA_EXPORT_FALLBACK_FOREIGNOBJECT,
-			});
-			const exportRoute = resolveCapinstaExportRoute({
-				exportMode,
-				captionRecordCount: capinstaRecords.length,
-				strategy: exportStrategy,
-			});
-			const useHeadlessCaptionBackend = exportRoute === "headless-worker";
-
 			console.info("[export] composition request", {
 				exportMode,
 				layerPolicy,
@@ -277,421 +243,10 @@ export class RendererManager {
 				height: canvasSize.height,
 				requestedFps: fps ?? null,
 				effectiveFps: exportFps,
-				renderPath: useHeadlessCaptionBackend
-					? "headless-playwright-backend"
-					: "shared-scene-exporter",
+				renderPath: "shared-scene-exporter",
 			});
 
 			const isDebug = process.env.NEXT_PUBLIC_CAPINSTA_DEBUG === "true";
-
-			// Pre-export validation: single-renderer invariant, no duplicates,
-			// no empty/stale captions, preview/export style hash parity.
-			if (useHeadlessCaptionBackend) {
-				// 1. Pre-export validation
-				const preCheck = validateCapinstaPreExport({
-					records: capinstaRecords,
-					canvasWidth: canvasSize.width,
-					canvasHeight: canvasSize.height,
-				});
-				if (isDebug) {
-					console.debug("[capinsta-export] pre-export validation", {
-						severity: preCheck.severity,
-						checks: preCheck.checks,
-						exportFps,
-						canvasSize: `${canvasSize.width}x${canvasSize.height}`,
-						rendererPath: "headless (Playwright background export)",
-					});
-				}
-				if (preCheck.severity === "error") {
-					const failed = preCheck.checks
-						.filter((c) => !c.passed)
-						.map((c) => c.name)
-						.join(", ");
-					return {
-						success: false,
-						error: `CapInsta export validation failed: ${failed}`,
-					};
-				}
-
-				const parity = validatePreviewExportStyleParity({
-					records: capinstaRecords,
-					canvasWidth: canvasSize.width,
-					canvasHeight: canvasSize.height,
-				});
-				if (isDebug) {
-					console.debug("[capinsta-export] preview/export style parity", {
-						severity: parity.severity,
-						checks: parity.checks,
-					});
-				}
-				if (parity.severity === "error") {
-					return {
-						success: false,
-						error:
-							"CapInsta preview/export style hash mismatch — " +
-							"preview and export would render captions differently.",
-					};
-				}
-
-				// 2. Resolve an AI job or, for imported subtitles, the source video.
-				const capinstaDoc = capinstaRecords[0]?.document;
-				let sourceJobId = "";
-				if (capinstaDoc) {
-					const note = capinstaDoc.manualEdits?.notes?.[0] || "";
-					const match = note.match(/Generated from Capinsta job ([a-f0-9-]+)/);
-					if (match) {
-						sourceJobId = match[1];
-					}
-				}
-				const isImportedSubtitle =
-					capinstaDoc?.sourceTranscriptRef.provider === "subtitle_import";
-				const videoElements = [
-					...rawTracks.main.elements,
-					...rawTracks.overlay
-						.filter((track) => track.type === "video")
-						.flatMap((track) => track.elements),
-				].filter((element) => element.type === "video");
-				const hasTimelineVideo = videoElements.length > 0;
-				if (!hasTimelineVideo) {
-					// Captions are independently renderable. A removed/absent source
-					// video must never prevent a solid-background caption export.
-					sourceJobId = "";
-				}
-				if (!isImportedSubtitle) {
-					sourceJobId ||= hasTimelineVideo
-						? (activeProject.capinstaServerJobId ?? "")
-						: "";
-				}
-
-				let sourceMediaAssetId = "";
-				if (!sourceJobId && isImportedSubtitle && hasTimelineVideo) {
-					const sourceVideo = videoElements
-						.map((element) =>
-							mediaAssets.find((asset) => asset.id === element.mediaId),
-						)
-						.find((asset) => asset?.type === "video");
-					if (!sourceVideo) {
-						return {
-							success: false,
-							error:
-								"The source video for these imported captions is unavailable. Re-import the video, then retry export.",
-						};
-					}
-
-					const cachedServerAssetId = sourceVideo.serverAssetId ?? "";
-					let cachedAssetAvailable = false;
-					if (cachedServerAssetId) {
-						try {
-							cachedAssetAvailable = await verifyProjectMediaAsset({
-								assetId: cachedServerAssetId,
-							});
-						} catch {
-							cachedAssetAvailable = false;
-						}
-					}
-					if (cachedAssetAvailable) {
-						sourceMediaAssetId = cachedServerAssetId;
-					} else {
-						const uploaded = await ensureServerMediaAssetForCaptions({
-							projectId: activeProject.metadata.id,
-							mediaAsset: sourceVideo,
-							loadMediaAsset: (args) => storageService.loadMediaAsset(args),
-						});
-						sourceMediaAssetId = uploaded.serverAssetId;
-						this.editor.media.setAssets({
-							assets: mediaAssets.map((asset) =>
-								asset.id === uploaded.mediaAsset.id
-									? uploaded.mediaAsset
-									: asset,
-							),
-						});
-						await storageService.saveMediaAsset({
-							projectId: activeProject.metadata.id,
-							mediaAsset: uploaded.mediaAsset,
-						});
-						await this.editor.project.setCapinstaServerMediaAsset({
-							mediaAssetId: uploaded.serverAssetId,
-							mediaAssetVersion: 1,
-							sourceFingerprint: null,
-						});
-					}
-				}
-
-				if (!sourceJobId && !sourceMediaAssetId && hasTimelineVideo) {
-					return {
-						success: false,
-						error:
-							"Failed to resolve the caption source for export. Regenerate captions or re-import the source video, then retry.",
-					};
-				}
-
-				// Headless-specific validation: timing, dimensions, job id format.
-				const headlessCheck = validateCapinstaHeadlessExport({
-					records: capinstaRecords,
-					canvasWidth: canvasSize.width,
-					canvasHeight: canvasSize.height,
-					sourceJobId,
-					sourceMediaAssetId,
-					allowSourceLess: !hasTimelineVideo,
-				});
-				if (isDebug) {
-					console.debug("[capinsta-export] headless validation", {
-						severity: headlessCheck.severity,
-						checks: headlessCheck.checks,
-						sourceJobId,
-					});
-				}
-				if (headlessCheck.severity === "error") {
-					const failed = headlessCheck.checks
-						.filter((c) => !c.passed)
-						.map((c) => c.name)
-						.join(", ");
-					return {
-						success: false,
-						error: `CapInsta headless export validation failed: ${failed}`,
-					};
-				}
-
-				// 3. Prepare payload
-				const wordsById = new Map(
-					capinstaDoc.words.map((word) => [word.id, word]),
-				);
-				const captionsJson = JSON.stringify(
-					capinstaDoc.clips.map((clip) => ({
-						...clip,
-						style: resolveCapinstaClipStyle({
-							document: capinstaDoc,
-							clip,
-						}),
-						words: clip.wordIds
-							.map((wordId) => wordsById.get(wordId))
-							.filter((word) => word !== undefined),
-					})),
-				);
-				const fpsValue = Math.round(exportFpsValue);
-
-				// FIX: getTotalDuration() returns MediaTime in TICKS, but the backend
-				// interprets duration_override as SECONDS. Convert here. Sending ticks
-				// raw caused "duration 4351080.00s exceeds MAX_EXPORT_DURATION_SECONDS".
-				const durationSeconds = duration / TICKS_PER_SECOND;
-				const headlessExportMode = hasTimelineVideo
-					? exportMode
-					: "captions_solid_background";
-				const headlessBackgroundColor = hasTimelineVideo
-					? normalizedBackgroundColor
-					: exportMode === "captions_solid_background"
-						? normalizedBackgroundColor
-						: activeProject.settings.background.type === "color"
-							? activeProject.settings.background.color
-							: "#101010";
-				const formData = createExportRequestFormData({
-					sourceJobId,
-					sourceMediaAssetId: sourceMediaAssetId || undefined,
-					projectId: activeProject.metadata.id,
-					captionsJson,
-					theme: capinstaDoc.stylePresetId || "word_highlight_box",
-					styleConfigJson: JSON.stringify(
-						resolveCapinstaClipStyle({
-							document: capinstaDoc,
-							clip: capinstaDoc.clips[0]!,
-						}),
-					),
-					width: canvasSize.width,
-					height: canvasSize.height,
-					fps: fpsValue,
-					includeAudio: hasTimelineVideo && Boolean(includeAudio),
-					quality,
-					exportMode: headlessExportMode,
-					backgroundColor: headlessBackgroundColor,
-					durationSeconds,
-				});
-
-				// 4. Send POST request to start export job
-				const apiBase = getCapinstaApiBaseUrl();
-				onProgress?.({ progress: 0.05 });
-				const exportEndpoint = buildCapinstaApiUrl({
-					baseUrl: apiBase,
-					path: "/export/jobs",
-				});
-				const idempotencyKey = crypto.randomUUID();
-				let response: Response;
-				try {
-					response = await authenticatedFetch(exportEndpoint, {
-						method: "POST",
-						body: formData,
-						headers: { "X-Idempotency-Key": idempotencyKey },
-					});
-				} catch (firstError) {
-					if (!(firstError instanceof TypeError) || !navigator.onLine) {
-						throw firstError;
-					}
-					await new Promise((resolve) => setTimeout(resolve, 750));
-					try {
-						response = await authenticatedFetch(exportEndpoint, {
-							method: "POST",
-							body: formData,
-							headers: { "X-Idempotency-Key": idempotencyKey },
-						});
-					} catch (retryError) {
-						if (retryError instanceof TypeError) {
-							throw new Error(
-								`Could not reach the export service at ${apiBase}. Check that the backend deployment is healthy, then retry.`,
-							);
-						}
-						throw retryError;
-					}
-				}
-
-				const startData = await readJsonApiResponse<Record<string, unknown>>({
-					response,
-					endpoint: exportEndpoint,
-				});
-				if (!response.ok) {
-					return {
-						success: false,
-						error: formatExportApiError({
-							endpoint: exportEndpoint,
-							status: response.status,
-							payload: startData,
-							correlationId: response.headers.get("x-correlation-id"),
-						}),
-					};
-				}
-
-				const jobId =
-					typeof startData.jobId === "string" ? startData.jobId : null;
-				const correlationId =
-					response.headers.get("x-correlation-id") ??
-					(typeof startData.correlationId === "string"
-						? startData.correlationId
-						: null) ??
-					null;
-				if (!jobId) {
-					return {
-						success: false,
-						error: formatExportApiError({
-							endpoint: exportEndpoint,
-							status: response.status,
-							payload: {
-								stage: "create_job",
-								error: "Export API did not return a job ID.",
-							},
-							correlationId,
-						}),
-					};
-				}
-
-				// 5. Poll status
-				const statusUrl = buildCapinstaApiUrl({
-					baseUrl: apiBase,
-					path: `/export/jobs/${jobId}`,
-				});
-				let isComplete = false;
-				let pollError: string | null = null;
-				let downloadUrl: string | null = null;
-
-				while (!isComplete && !pollError) {
-					if (onCancel?.()) {
-						return { success: false, cancelled: true };
-					}
-
-					await new Promise((resolve) => setTimeout(resolve, 1500));
-
-					const pollRes = await authenticatedFetch(statusUrl);
-					const jobStatus = await readJsonApiResponse<Record<string, unknown>>({
-						response: pollRes,
-						endpoint: statusUrl,
-					});
-					if (!pollRes.ok) {
-						pollError = formatExportApiError({
-							endpoint: statusUrl,
-							status: pollRes.status,
-							payload: jobStatus,
-							correlationId:
-								pollRes.headers.get("x-correlation-id") ?? correlationId,
-							jobId,
-						});
-						break;
-					}
-
-					if (jobStatus.status === "completed") {
-						isComplete = true;
-						downloadUrl =
-							typeof jobStatus.downloadUrl === "string"
-								? jobStatus.downloadUrl
-								: null;
-					} else if (jobStatus.status === "failed") {
-						pollError = formatExportApiError({
-							endpoint: statusUrl,
-							status: pollRes.status,
-							payload: {
-								stage: jobStatus.stage,
-								error:
-									jobStatus.error ||
-									jobStatus.message ||
-									"Export job failed on server.",
-							},
-							correlationId:
-								typeof jobStatus.correlationId === "string"
-									? jobStatus.correlationId
-									: correlationId,
-							jobId,
-						});
-					} else {
-						const progress =
-							typeof jobStatus.progress === "number" ? jobStatus.progress : 0;
-						onProgress?.({ progress: 0.05 + (progress / 100) * 0.9 });
-					}
-				}
-
-				if (pollError) {
-					return { success: false, error: pollError };
-				}
-
-				if (!downloadUrl) {
-					return {
-						success: false,
-						error: formatExportApiError({
-							endpoint: statusUrl,
-							status: 200,
-							payload: {
-								stage: "resolve_output",
-								error: "No download URL returned for finished export.",
-							},
-							correlationId,
-							jobId,
-						}),
-					};
-				}
-
-				// 6. Fetch output file and return as ArrayBuffer
-				onProgress?.({ progress: 0.98 });
-				const fileRes = await authenticatedFetch(`${apiBase}${downloadUrl}`);
-				if (!fileRes.ok) {
-					return {
-						success: false,
-						error: formatExportApiError({
-							endpoint: `${apiBase}${downloadUrl}`,
-							status: fileRes.status,
-							payload: {
-								stage: "download_output",
-								error: "Failed to download the completed export.",
-							},
-							correlationId:
-								fileRes.headers.get("x-correlation-id") ?? correlationId,
-							jobId,
-						}),
-					};
-				}
-
-				const buffer = await fileRes.arrayBuffer();
-				onProgress?.({ progress: 1.0 });
-
-				return {
-					success: true,
-					buffer,
-				};
-			}
 
 			let audioBuffer: AudioBuffer | null = null;
 			if (includeAudio) {
@@ -721,6 +276,7 @@ export class RendererManager {
 				quality,
 				shouldIncludeAudio: !!includeAudio,
 				audioBuffer: audioBuffer || undefined,
+				captionRecords: capinstaRecords,
 			});
 
 			exporter.on("progress", (progress) => {

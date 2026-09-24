@@ -8,13 +8,11 @@ import { ThemeToggle } from "./theme-toggle";
 import { ROUTES, BRAND } from "@/site/brand";
 import { Menu02Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { AccountMenu } from "@/components/auth/account-menu";
 
 const NAV_LINKS = [
 	{ label: "Features", href: "/#features" },
 	{ label: "Pricing", href: "/pricing" },
 	{ label: "Caption styles", href: ROUTES.captionPresets },
-	{ label: "Donate", href: "/donate" },
 	{ label: "Compare", href: ROUTES.compare },
 	{ label: "Guides", href: ROUTES.guides },
 ];
@@ -62,7 +60,6 @@ export function Header() {
 							</Button>
 						</Link>
 					</div>
-					<AccountMenu compact />
 					<ThemeToggle />
 					{/* Mobile hamburger */}
 					<Button

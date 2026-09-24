@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
+import nodeWasm from "../../../../rust/wasm/pkg-node/opencut_wasm.js";
 
 mock.module("opencut-wasm", () => ({
+	...nodeWasm,
 	TICKS_PER_SECOND: () => 120_000,
 	lastFrameTime: ({ duration }: { duration: number }) => duration,
 	mediaTimeFromSeconds: ({ seconds }: { seconds: number }) =>

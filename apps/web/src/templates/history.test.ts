@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import nodeWasm from "../../../../rust/wasm/pkg-node/opencut_wasm.js";
 import type { EditorCore as EditorCoreType } from "@/core";
 import type { TProject } from "@/project/types";
 import type {
@@ -9,6 +10,7 @@ import type {
 } from "@/timeline";
 
 mock.module("opencut-wasm", () => ({
+	...nodeWasm,
 	TICKS_PER_SECOND: () => 120_000,
 	lastFrameMediaTime: ({ duration }: { duration: number }) => duration,
 	lastFrameTime: ({ duration }: { duration: number }) => duration,

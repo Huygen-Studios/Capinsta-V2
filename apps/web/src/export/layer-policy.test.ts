@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { SceneTracks } from "@/timeline";
 import { resolveExportSceneBackground } from "./color";
 import {
@@ -7,18 +7,6 @@ import {
 	hasIndependentVisualLayers,
 } from "./layer-policy";
 
-mock.module("opencut-wasm", () => ({
-	TICKS_PER_SECOND: () => 120_000,
-	lastFrameTime: ({ duration }: { duration: number }) => duration,
-	mediaTimeFromSeconds: ({ seconds }: { seconds: number }) =>
-		Math.round(seconds * 120_000),
-	mediaTimeToSeconds: ({ time }: { time: number }) => time / 120_000,
-	parseTimecode: () => null,
-	roundToFrame: ({ time }: { time: number }) => Math.round(time),
-	roundMediaTime: ({ time }: { time: number }) => Math.round(time),
-	snappedSeekTime: ({ time }: { time: number }) => Math.round(time),
-	ZERO_MEDIA_TIME: 0,
-}));
 
 const ZERO_MEDIA_TIME = 0;
 

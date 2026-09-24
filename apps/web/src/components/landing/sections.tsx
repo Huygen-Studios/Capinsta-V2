@@ -54,9 +54,9 @@ const features = [
 	},
 	{
 		icon: Shield02Icon,
-		title: "Temporary storage for privacy",
+		title: "Local-first privacy",
 		description:
-			"Your uploaded video and generated captions are held only during editing. They're automatically deleted after inactivity.",
+			"Projects and source media stay in your browser. AI captions send only required extracted audio directly to Google Gemini.",
 	},
 ];
 
@@ -288,13 +288,12 @@ export function PrivacySection() {
 						Your videos don&apos;t live on our servers
 					</h2>
 					<p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-						{BRAND.productName} holds your uploaded video and generated captions only while you
-						are actively editing. After a period of inactivity, everything is automatically
-						deleted — the video, captions, transcripts, and exports. We don&apos;t keep your media
-						longer than necessary.
+						{BRAND.productName} keeps project editing, source media, and video export in your browser.
+						When you request AI captions, required extracted audio goes directly to Google Gemini
+						using the API key you provide; it is not routed through Capinsta servers.
 					</p>
 					<p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-						Remember to download your export before leaving the editor.
+						Browser storage is not encrypted, and Google&apos;s API terms apply to Gemini requests.
 					</p>
 				</div>
 			</div>

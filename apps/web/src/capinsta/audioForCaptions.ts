@@ -72,8 +72,25 @@ export async function ensureAudioForCaptions({
 	if (!videoAsset) {
 		throw new Error("Selected media is no longer available.");
 	}
+	if (videoAsset.type === "audio") {
+		const audioAsset: AudioAssetForCaptions = {
+			assetId: videoAsset.id,
+			sourceAssetId: videoAsset.id,
+			file: videoAsset.file,
+			name: videoAsset.name,
+			duration: videoAsset.duration,
+			wasReused: true,
+			audioOrigin: "source_media",
+			timelineOffsetUs: 0,
+			timelineDurationUs: videoAsset.duration
+				? Math.round(videoAsset.duration * 1_000_000)
+				: undefined,
+		};
+		inSessionAudioByVideoAssetId.set(videoAssetId, audioAsset);
+		return audioAsset;
+	}
 	if (videoAsset.type !== "video") {
-		throw new Error("Select a video file to generate captions.");
+		throw new Error("Select a video or audio file to generate captions.");
 	}
 
 	const extractedAudioAsset = videoAsset.extractedAudioAssetId

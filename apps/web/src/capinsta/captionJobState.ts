@@ -1,5 +1,3 @@
-import type { CapinstaJobStatusHistoryEntry } from "./jobPolling";
-
 export type CaptionJobStatus =
 	| "idle"
 	| "preparing"
@@ -15,9 +13,6 @@ export interface CaptionJobState {
 	progressPercent: number | null;
 	statusMessage: string;
 	errorMessage: string | null;
-	activeJobId: string | null;
-	statusHistory: CapinstaJobStatusHistoryEntry[];
-	debugWarning: string | null;
 }
 
 export type CaptionJobAction =
@@ -31,12 +26,6 @@ export type CaptionJobAction =
 			status?: Exclude<CaptionJobStatus, "idle" | "done" | "error">;
 			message: string;
 			progressPercent?: number | null;
-			activeJobId?: string | null;
-	  }
-	| {
-			type: "status_history";
-			history: readonly CapinstaJobStatusHistoryEntry[];
-			debugWarning?: string | null;
 	  }
 	| { type: "done"; message?: string }
 	| { type: "error"; message: string }
@@ -47,9 +36,6 @@ export const IDLE_CAPTION_JOB_STATE: CaptionJobState = {
 	progressPercent: null,
 	statusMessage: "",
 	errorMessage: null,
-	activeJobId: null,
-	statusHistory: [],
-	debugWarning: null,
 };
 
 export function isCaptionJobRunning(status: CaptionJobStatus): boolean {
@@ -88,9 +74,6 @@ export function captionJobReducer(
 				progressPercent: null,
 				statusMessage: action.message,
 				errorMessage: null,
-				activeJobId: null,
-				statusHistory: [],
-				debugWarning: null,
 			};
 		case "progress":
 			return {
@@ -101,19 +84,6 @@ export function captionJobReducer(
 					action.progressPercent === undefined
 						? state.progressPercent
 						: action.progressPercent,
-				activeJobId:
-					action.activeJobId === undefined
-						? state.activeJobId
-						: action.activeJobId,
-			};
-		case "status_history":
-			return {
-				...state,
-				statusHistory: [...action.history],
-				debugWarning:
-					action.debugWarning === undefined
-						? state.debugWarning
-						: action.debugWarning,
 			};
 		case "done":
 			return {
@@ -122,8 +92,6 @@ export function captionJobReducer(
 				progressPercent: 100,
 				statusMessage: action.message ?? "Done",
 				errorMessage: null,
-				activeJobId: null,
-				debugWarning: null,
 			};
 		case "error":
 			return {
@@ -131,7 +99,6 @@ export function captionJobReducer(
 				status: "error",
 				statusMessage: "",
 				errorMessage: action.message,
-				activeJobId: null,
 			};
 		case "reset":
 			return IDLE_CAPTION_JOB_STATE;

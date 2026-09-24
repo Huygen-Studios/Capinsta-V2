@@ -236,7 +236,7 @@ const ORIGINAL_PRESET_EXPECTATIONS: Record<
 };
 
 describe("Capinsta style foundation", () => {
-	test("registers the six Capinsta caption presets", () => {
+	test("registers every production Capinsta caption preset", () => {
 		expect(CAPINSTA_CAPTION_PRESETS.map((preset) => preset.id)).toEqual([
 			"word_highlight_box",
 			"attention_punch",
@@ -244,11 +244,14 @@ describe("Capinsta style foundation", () => {
 			"kinetic_fade",
 			"mrbeast_style",
 			"modern_minimalist_lockup",
+			"dynamic_punch",
 		]);
 	});
 
 	test("six preset values match the extracted original Capinsta registry", () => {
-		for (const preset of CAPINSTA_CAPTION_PRESETS) {
+		for (const preset of CAPINSTA_CAPTION_PRESETS.filter(
+			(preset) => preset.id !== "dynamic_punch",
+		)) {
 			const expected = ORIGINAL_PRESET_EXPECTATIONS[preset.id];
 
 			expect(preset.name).toBe(expected.name);
@@ -534,7 +537,7 @@ describe("Capinsta style foundation", () => {
 	test("preview motion helpers expose deterministic pop and paint styles", () => {
 		expect(
 			getCapinstaEntranceStyle({ transition: "pop", progress: 0.5 }).transform,
-		).toBe("scale(0.9888888888888889)");
+		).toBe("scale(1.0919)");
 		expect(
 			getCapinstaActiveWordEffectStyle({
 				effect: "paint",
@@ -564,7 +567,7 @@ describe("Capinsta style foundation", () => {
 			presetId: "mrbeast_style",
 		});
 
-		expect(resetRecord.document.clips[0]?.text).toBe("Build the edit then");
+		expect(resetRecord.document.clips[0]?.text).toBe("Build the edit");
 		expect(
 			resolveCapinstaClipStyle({
 				document: resetRecord.document,

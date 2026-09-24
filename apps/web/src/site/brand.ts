@@ -126,7 +126,6 @@ export const ROUTES = {
 	captionPresets: "/caption-presets",
 	compare: "/compare",
 	brand: "/brand",
-	advertising: "/advertising",
 } as const;
 
 /**

@@ -1,54 +1,30 @@
-# Capinsta Editor
+# Capinsta Production
 
-Capinsta Editor is the production packaging of the Capinsta caption engine integrated into the OpenCut Classic editor foundation.
+Capinsta is a local-first browser video editor with Gemini BYOK captions and browser-native MP4 export.
 
-The frontend remains the OpenCut Classic editing shell: media import, timeline, preview, project state, and export. Capinsta provides AI caption generation, word timing, active-word preview, caption style presets, edit/timing metadata, and styled subtitle export.
+- The existing production editor, timeline, caption documents, presets, animations, preview renderer, undo/redo, and multi-track behavior remain the visual source of truth.
+- Gemini transcription runs directly from the browser with the user's API key. The key is held in session storage by default and is never sent to Capinsta infrastructure.
+- MediaBunny decodes and encodes locally. Source video remains on the device; only normalized audio chunks are uploaded directly to Google for transcription.
+- Projects and source media are stored locally in IndexedDB/OPFS. No Capinsta account, Python backend, database, Redis, Playwright, or server FFmpeg is required.
 
-## Structure
+## Develop
 
-- `apps/web` - integrated browser editor.
-- `backend` - Capinsta FastAPI caption backend.
-- `docs` - deployment, QA, rollback, and integration notes.
+\`\`\`powershell
+bun install --frozen-lockfile
+bun run dev:web
+\`\`\`
 
-## Start Backend
+Open http://localhost:3000/projects. AI captions require a Gemini API key entered in the editor.
 
-```powershell
-cd F:\CapInsta\capinsta-production-editor\backend
-python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\venv\Scripts\python.exe -m uvicorn server.main:app --host 127.0.0.1 --port 8000
-```
+## Verify
 
-## Start Frontend
+\`\`\`powershell
+bun test apps/web/src/capinsta apps/web/src/export
+bun run build:web
+\`\`\`
 
-```powershell
-cd F:\CapInsta\capinsta-production-editor
-C:\Users\shrav\.bun\bin\bun.exe install
-$env:NEXT_PUBLIC_ENABLE_AI_CAPTIONS="true"
-$env:NEXT_PUBLIC_ENABLE_CAPINSTA_SAMPLE_IMPORT="false"
-$env:NEXT_PUBLIC_CAPINSTA_API_BASE_URL="http://127.0.0.1:8000"
-$env:NEXT_PUBLIC_CAPINSTA_DEBUG="false"
-C:\Users\shrav\.bun\bin\bun.exe run dev:web
-```
+## Deploy to Vercel
 
-Copy `.env.example` to `.env.local` for local development and fill placeholders. Do not commit real secrets.
+Import the repository with the repository root as Vercel's Root Directory. The included \`vercel.json\` uses \`bun install --frozen-lockfile\` and \`bun run build:web\`. Do not configure a Gemini secret in Vercel.
 
-## Validation
-
-```powershell
-C:\Users\shrav\.bun\bin\bun.exe test apps/web/src/capinsta
-C:\Users\shrav\.bun\bin\bun.exe test apps/web/src/capinsta/exportRender.test.ts
-C:\Users\shrav\.bun\bin\bun.exe run build:web
-
-cd backend
-.\venv\Scripts\python.exe -m compileall ai_pipeline server
-.\venv\Scripts\python.exe -m pytest -q
-```
-
-Full frontend tests currently include inherited OpenCut Classic failures unrelated to Capinsta. See `docs/known-issues.md`.
-
-## Rollback
-
-AI captions can be disabled with `NEXT_PUBLIC_ENABLE_AI_CAPTIONS=false`.
-Sample caption import can be disabled with `NEXT_PUBLIC_ENABLE_CAPINSTA_SAMPLE_IMPORT=false`.
-Existing projects without Capinsta metadata remain backward-compatible.
+See [docs/architecture.md](docs/architecture.md), [docs/gemini-byok.md](docs/gemini-byok.md), [docs/browser-export.md](docs/browser-export.md), and [docs/vercel-deployment.md](docs/vercel-deployment.md).

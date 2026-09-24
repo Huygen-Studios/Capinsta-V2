@@ -1,7 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
+/* eslint-disable @typescript-eslint/no-unsafe-type-assertion -- DOM test doubles intentionally implement a narrow surface */
+import nodeWasm from "../../../../../rust/wasm/pkg-node/opencut_wasm.js";
 import type { TextElement, TimelineTrack } from "@/timeline";
 
 mock.module("opencut-wasm", () => ({
+	...nodeWasm,
 	TICKS_PER_SECOND: () => 120_000,
 }));
 

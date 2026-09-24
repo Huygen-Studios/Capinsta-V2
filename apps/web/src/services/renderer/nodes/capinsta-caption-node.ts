@@ -34,14 +34,9 @@ export interface ResolvedCapinstaCaptionNodeState {
  * CapinstaCaptionNode is RETAINED FOR INTERNAL TYPE COMPATIBILITY ONLY.
  *
  * It MUST NOT draw visible caption text. CapInsta captions have a single visual
- * renderer: `CapinstaActiveCaptionOverlay` (React DOM). During export the React
- * overlay DOM is rasterized per-frame via SVG foreignObject and composited on top
- * of the export canvas (see `capinsta-overlay-capture.ts`), so preview and export
- * are guaranteed pixel-identical.
- *
- * The canvas/WYSIWYG renderer (`capinstaWysiwygExportRenderer`) is intentionally
- * NOT called from here. If you ever re-enable it you will reintroduce the
- * preview/export styling divergence this guard exists to prevent.
+ * Preview captions are rendered by `CapinstaActiveCaptionOverlay` (React DOM).
+ * Browser export resolves the same render model and draws it through
+ * `capinstaWysiwygExportRenderer` after the scene frame is composed.
  */
 export class CapinstaCaptionNode extends BaseNode<
 	CapinstaCaptionNodeParams,
@@ -55,7 +50,7 @@ export class CapinstaCaptionNode extends BaseNode<
  * it will still draw zero visible caption pixels.
  */
 export function renderCapinstaCaptionToContext({
-	node,
+	node: _node,
 	ctx: _ctx,
 }: {
 	node: CapinstaCaptionNode;
@@ -67,7 +62,7 @@ export function renderCapinstaCaptionToContext({
 	) {
 		console.warn(
 			"[capinsta] renderCapinstaCaptionToContext called — this is a defensive no-op. " +
-				"Captions are rendered by CapinstaActiveCaptionOverlay (React DOM) only.",
+				"Captions are composited by the shared Capinsta canvas renderer.",
 		);
 	}
 	return;

@@ -16,7 +16,7 @@ const words: AlignedWord[] = [
 ];
 
 describe("pause-aware caption timing", () => {
-	test("alignedWordsToCaptions splits immediately at a speaker pause", () => {
+	test("alignedWordsToCaptions preserves the preset hold while splitting at a speaker pause", () => {
 		const captions = alignedWordsToCaptions(words, "english", "word_highlight_box", {
 			...DEFAULT_CAPTION_CHUNKING_CONFIG,
 			pauseSplitThreshold: 0.45,
@@ -27,7 +27,7 @@ describe("pause-aware caption timing", () => {
 			"spends around",
 			"22 lakh crore",
 		]);
-		expect(captions[0]!.end).toBeLessThanOrEqual(1.2);
+		expect(captions[0]!.end).toBe(2.399);
 		expect(captions[1]!.start).toBeGreaterThanOrEqual(2.4);
 	});
 

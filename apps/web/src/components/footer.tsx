@@ -7,7 +7,6 @@ import {
 	BRAND,
 	LOGOS,
 } from "@/site/brand";
-import { CookiePreferencesButton } from "./cookie-consent";
 
 type FooterLink = { label: string; href: string };
 
@@ -33,7 +32,6 @@ const footerSections: FooterSection[] = [
 			{ label: "About", href: ROUTES.about },
 			{ label: "Contact", href: ROUTES.contact },
 			{ label: "Brand assets", href: ROUTES.brand },
-			{ label: "Donate", href: "/donate" },
 			{ label: BRAND.parentCompany, href: BRAND.companyWebsite },
 		],
 	},
@@ -43,7 +41,6 @@ const footerSections: FooterSection[] = [
 			{ label: "Privacy Policy", href: ROUTES.privacy },
 			{ label: "Terms of Service", href: ROUTES.terms },
 			{ label: "Cookie Policy", href: ROUTES.cookies },
-			{ label: "Advertising disclosure", href: ROUTES.advertising },
 			{ label: "Data Retention Policy", href: ROUTES.dataRetention },
 			{ label: "Acceptable Use Policy", href: ROUTES.acceptableUse },
 			{ label: "Disclaimer", href: ROUTES.disclaimer },
@@ -112,7 +109,6 @@ export function Footer() {
 							</span>
 						</div>
 						<div className="flex items-center gap-4">
-							<CookiePreferencesButton />
 							<p className="text-muted-foreground text-sm">
 								{copyrightLine()}
 							</p>

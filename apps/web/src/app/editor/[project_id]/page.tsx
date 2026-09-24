@@ -22,8 +22,6 @@ import { useEditor } from "@/editor/use-editor";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { useProjectHeartbeat } from "@/capinsta/useProjectHeartbeat";
 import { ChangelogNotification } from "@/changelog/components/changelog-notification";
 import {
 	createPreviewOverlayControl,
@@ -36,7 +34,6 @@ import {
 	bookmarkNotesPreviewOverlay,
 	getBookmarkPreviewOverlaySource,
 } from "@/timeline/bookmarks/index";
-import { EditorAdRail, EditorTopAd } from "@/components/adsense/editor-ads";
 
 export default function Editor() {
 	const params = useParams<{ project_id: string }>();
@@ -54,24 +51,6 @@ export default function Editor() {
 }
 
 function EditorProjectSession() {
-	const { isExpired } = useProjectHeartbeat();
-	if (isExpired) {
-		return (
-			<div className="bg-background flex h-screen w-screen items-center justify-center p-6">
-				<div className="max-w-md text-center">
-					<h1 className="text-xl font-semibold">Project expired</h1>
-					<p className="mt-3 text-sm text-muted-foreground">
-						This project expired after 15 minutes of inactivity. Please start a
-						new project.
-					</p>
-					<Button asChild className="mt-6">
-						<Link href="/projects">Start a new project</Link>
-					</Button>
-				</div>
-			</div>
-		);
-	}
-
 	return (
 		<div
 			className="editor-shell bg-background flex h-screen w-screen flex-col overflow-hidden"
@@ -79,13 +58,11 @@ function EditorProjectSession() {
 			data-tour="editor-root"
 		>
 			<DegradedRendererBanner />
-			<EditorTopAd />
 			<EditorHeader />
 			<div className="editor-workspace-with-ads min-h-0 min-w-0 flex-1">
 				<div className="min-h-0 min-w-0">
 					<EditorLayout />
 				</div>
-				<EditorAdRail />
 			</div>
 			<MigrationDialog />
 			<ChangelogNotification />

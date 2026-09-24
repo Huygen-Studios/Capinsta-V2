@@ -94,10 +94,9 @@ describe("MediaManager local import", () => {
 			asset: makeAsset(),
 		});
 
-		expect(imported?.syncStatus).toBe("local");
-		expect(imported?.serverAssetId).toBeUndefined();
+		expect(imported?.file.name).toBe("video.webm");
 		expect(saveMediaAssetMock).toHaveBeenCalledTimes(1);
-		expect(saveMediaAssetMock.mock.calls[0]?.[0].mediaAsset.serverAssetId).toBeUndefined();
+		expect(saveMediaAssetMock.mock.calls[0]?.[0].mediaAsset.file.name).toBe("video.webm");
 		expect(toastWarningMock).not.toHaveBeenCalled();
 		expect(toastErrorMock).not.toHaveBeenCalled();
 	});

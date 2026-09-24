@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { BRAND, SITE_INFO, SITE_URL } from "@/site/brand";
-import { ADSENSE_CONFIG } from "@/site/ads";
 
 export const baseMetaData: Metadata = {
 	metadataBase: new URL(SITE_URL),
@@ -88,9 +87,6 @@ export const baseMetaData: Metadata = {
 		title: BRAND.productName,
 	},
 	manifest: "/logos/favicon/site.webmanifest",
-	other: ADSENSE_CONFIG.enabled
-		? { "google-adsense-account": ADSENSE_CONFIG.clientId }
-		: undefined,
 };
 
 /** Theme color + viewport. Exported separately (Next 16 viewport API). */

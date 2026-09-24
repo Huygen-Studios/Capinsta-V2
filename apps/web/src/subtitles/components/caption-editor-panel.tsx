@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect, jsx-a11y/no-autofocus, jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/label-has-associated-control -- Existing editor interactions are intentionally preserved during the provider-only migration. */
+
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -69,16 +71,8 @@ function clipWords({
 
 function captionProviderLabel(document: NeutralCaptionDocument): string {
 	const provider = document.sourceTranscriptRef.provider.toLowerCase();
-	const fallback = document.sourceTranscriptRef.providerFallback;
 	if (provider === "gemini") return "Generated with Gemini AI";
-	if (provider === "sarvam") {
-		return fallback
-			? "Generated via Sarvam AI [Fallback]"
-			: "Generated with Sarvam AI";
-	}
-	if (provider === "openai_whisper") return "Generated with OpenAI Whisper";
-	if (provider === "groq_whisper") return "Generated with Groq Whisper";
-	return `Generated with ${document.sourceTranscriptRef.provider}`;
+	return "Imported transcript";
 }
 
 function TimeInput({

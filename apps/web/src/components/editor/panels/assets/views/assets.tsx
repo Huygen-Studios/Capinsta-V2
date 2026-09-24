@@ -52,7 +52,6 @@ import {
 import { MASKABLE_ELEMENT_TYPES } from "@/timeline";
 import type { MediaAsset } from "@/media/types";
 import { cn } from "@/utils/ui";
-import { recordMediaImports } from "@/components/feedback/editor-session-tracker";
 import {
 	CloudUploadIcon,
 	GridViewIcon,
@@ -108,7 +107,6 @@ export function MediaView() {
 						});
 						if (imported) importedAssets.push(imported);
 					}
-					recordMediaImports(importedAssets.length);
 					return {
 						uploadedCount: importedAssets.length,
 						localImportCount: importedAssets.length,

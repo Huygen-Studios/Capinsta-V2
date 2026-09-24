@@ -36,8 +36,6 @@ export class MediaManager {
 		const newAsset: MediaAsset = {
 			...asset,
 			id: generateUUID(),
-			syncStatus: "local",
-			syncError: undefined,
 		};
 
 		this.assets = [...this.assets, newAsset];
