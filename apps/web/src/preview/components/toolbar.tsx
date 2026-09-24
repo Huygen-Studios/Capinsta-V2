@@ -354,11 +354,10 @@ function PlayPauseButton() {
 	const [showPreparing, setShowPreparing] = useState(false);
 
 	useEffect(() => {
-		if (!isPreparing) {
-			setShowPreparing(false);
-			return;
-		}
-		const timer = window.setTimeout(() => setShowPreparing(true), 125);
+		const timer = window.setTimeout(
+			() => setShowPreparing(isPreparing),
+			isPreparing ? 125 : 0,
+		);
 		return () => window.clearTimeout(timer);
 	}, [isPreparing]);
 
