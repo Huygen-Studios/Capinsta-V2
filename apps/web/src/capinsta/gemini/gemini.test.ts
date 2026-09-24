@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 /* eslint-disable opencut/prefer-object-params -- Storage test double must implement the platform's positional interface. */
 import { createAudioChunks, mergeOverlappingWords } from "./chunking";
-import { redactGeminiSecrets, safeGeminiError } from "./errors";
+import {
+	isGeminiServiceUnavailable,
+	redactGeminiSecrets,
+	safeGeminiError,
+} from "./errors";
 import {
 	forgetGeminiKey,
 	isGeminiKeyRemembered,
@@ -19,7 +23,10 @@ import {
 	abortableDelay,
 	MAX_TRANSCRIPTION_ATTEMPTS,
 } from "./transcription";
-import { applyTranslationItems } from "./translation";
+import {
+	applyTranslationItems,
+	generateTranslationWithFallback,
+} from "./translation";
 
 class MemoryStorage implements Storage {
 	private values = new Map<string, string>();
@@ -232,6 +239,24 @@ test("translation preserves timing and rejects changed ordering", () => {
 			target: "hinglish",
 		}),
 	).toThrow("IDs or ordering");
+});
+
+test("translation falls back after an exhausted Gemini 503", async () => {
+	const attempted: string[] = [];
+	const result = await generateTranslationWithFallback({
+		models: ["gemini-3.5-flash-lite", "gemini-3.5-flash"],
+		signal: new AbortController().signal,
+		generate: (model) => {
+			attempted.push(model);
+			if (model.endsWith("lite")) {
+				return Promise.reject({ status: 503, message: "UNAVAILABLE" });
+			}
+			return Promise.resolve("converted");
+		},
+	});
+	expect(result).toBe("converted");
+	expect(attempted).toEqual(["gemini-3.5-flash-lite", "gemini-3.5-flash"]);
+	expect(isGeminiServiceUnavailable(new Error("503 model overloaded"))).toBe(true);
 });
 
 test("cancellation is immediate and deliberate timing retry is bounded", async () => {

@@ -10,13 +10,38 @@ export function redactGeminiSecrets(value: string): string {
 	);
 }
 
+function geminiErrorStatus(error: unknown): number {
+	if (typeof error !== "object" || error === null) return 0;
+	const candidates = [
+		"status" in error ? error.status : undefined,
+		"statusCode" in error ? error.statusCode : undefined,
+		"code" in error ? error.code : undefined,
+	];
+	for (const candidate of candidates) {
+		const status = Number(candidate);
+		if (Number.isInteger(status)) return status;
+	}
+	return 0;
+}
+
+export function isGeminiServiceUnavailable(error: unknown): boolean {
+	const status = geminiErrorStatus(error);
+	if (status >= 500 && status <= 599) return true;
+	const message = String(
+		typeof error === "object" && error !== null && "message" in error
+			? error.message
+			: "",
+	);
+	return /\b5\d\d\b|unavailable|overloaded|high demand|temporarily down/i.test(
+		message,
+	);
+}
+
 export function safeGeminiError(error: unknown): Error {
 	if (error instanceof DOMException && error.name === "AbortError") return error;
 	const errorRecord =
 		typeof error === "object" && error !== null ? error : undefined;
-	const status = Number(
-		errorRecord && "status" in errorRecord ? errorRecord.status : undefined,
-	);
+	const status = geminiErrorStatus(error);
 	const raw = redactGeminiSecrets(
 		String(
 			errorRecord && "message" in errorRecord ? errorRecord.message : "",
@@ -38,7 +63,7 @@ export function safeGeminiError(error: unknown): Error {
 	if (status === 404) {
 		return new Error("The required Gemini model is not available to this API key.");
 	}
-	if (status >= 500 && status <= 599) {
+	if (isGeminiServiceUnavailable(error)) {
 		return new Error("Google Gemini is temporarily unavailable. Please retry.");
 	}
 	return new Error("Gemini caption generation failed. Check the connection and browser media support; existing captions were kept.");
