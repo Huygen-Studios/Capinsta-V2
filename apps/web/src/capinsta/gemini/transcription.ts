@@ -35,6 +35,8 @@ const LANGUAGE_HINTS: Partial<Record<CapinstaLanguageMode, string[]>> = {
 };
 const FLASH_CHUNK_US = 90 * 1_000_000;
 const FLASH_OVERLAP_US = 1_000_000;
+const FLASH_REQUEST_TIMEOUT_MS = 180_000;
+const FILE_CLEANUP_TIMEOUT_MS = 10_000;
 
 export const MAX_TRANSCRIPTION_ATTEMPTS = 2;
 
@@ -200,6 +202,10 @@ export function buildFlashTranscriptionRequest({
 		],
 		config: {
 			abortSignal: signal,
+			httpOptions: {
+				timeout: FLASH_REQUEST_TIMEOUT_MS,
+				retryOptions: { attempts: 1 },
+			},
 			responseMimeType: "application/json",
 			responseJsonSchema: {
 				type: "object",
@@ -293,11 +299,20 @@ export async function transcribeWithFlashFallback({
 						}),
 					);
 				} catch (error) {
+					signal.throwIfAborted();
 					debugGeminiFailure({
 						stage: "audio-fallback",
 						model: GEMINI_AUDIO_FALLBACK_MODEL,
 						error,
 					});
+					if (
+						(error instanceof DOMException && error.name === "AbortError") ||
+						/request timed out/i.test(geminiProviderDiagnostic(error).message)
+					) {
+						throw new Error(
+							"Gemini Flash audio transcription timed out after 3 minutes. Please retry.",
+						);
+					}
 					throw error;
 				}
 				const parsed = parseEstimatedFlashWords(response.text, sub.durationUs);
@@ -346,7 +361,10 @@ export async function transcribeWithFlashFallback({
 				},
 				cleanup: () =>
 					uploaded.name
-						? ai.files.delete({ name: uploaded.name })
+						? ai.files.delete({
+								name: uploaded.name,
+								config: { httpOptions: { timeout: FILE_CLEANUP_TIMEOUT_MS } },
+							})
 						: Promise.resolve(),
 				onCleanupWarning: () =>
 					onWarning(
@@ -585,7 +603,10 @@ export async function generateGeminiTranscript({
 				},
 				cleanup: () =>
 					uploaded.name
-						? ai.files.delete({ name: uploaded.name })
+						? ai.files.delete({
+								name: uploaded.name,
+								config: { httpOptions: { timeout: FILE_CLEANUP_TIMEOUT_MS } },
+							})
 						: Promise.resolve(),
 				onCleanupWarning: () => {
 					onWarning(

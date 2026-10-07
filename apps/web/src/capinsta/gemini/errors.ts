@@ -148,7 +148,7 @@ export function safeGeminiError(error: unknown): Error {
 	const { status, code, message } = geminiProviderDiagnostic(error);
 	const combined = `${code} ${message}`;
 	if (
-		/^(CapInsta could not interpret Gemini word timestamps|Gemini word timing falls outside the project timeline|Gemini returned word timing outside the uploaded audio duration|Gemini returned (missing word timestamps|invalid word timing)|Gemini did not return usable word timing|Google could not prepare the uploaded audio)\.?$/.test(
+		/^(CapInsta could not interpret Gemini word timestamps|Gemini word timing falls outside the project timeline|Gemini returned word timing outside the uploaded audio duration|Gemini returned (missing word timestamps|invalid word timing)|Gemini did not return usable word timing|Google could not prepare the uploaded audio|Gemini Flash audio transcription timed out after 3 minutes\. Please retry)\.?$/.test(
 			message,
 		)
 	) {

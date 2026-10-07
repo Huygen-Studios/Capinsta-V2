@@ -466,6 +466,10 @@ test("Flash audio request asks for structured original-language word timing", ()
 		signal: new AbortController().signal,
 	});
 	expect(request.model).toBe("gemini-3.8-flash");
+	expect(request.config.httpOptions).toEqual({
+		timeout: 180_000,
+		retryOptions: { attempts: 1 },
+	});
 	expect(request.config.responseMimeType).toBe("application/json");
 	expect(request.contents[0]?.parts[0]).toEqual({
 		fileData: { fileUri: "https://files.test/audio", mimeType: "audio/wav" },
@@ -549,6 +553,34 @@ test("short-audio Flash fallback calls Gemini and keeps only validated words", a
 	expect(requests).toBe(1);
 	expect(words).toHaveLength(1);
 	expect(words[0]?.modelEstimated).toBe(true);
+});
+
+test("Flash request timeout ends the job without blaming the key or calling it user cancellation", async () => {
+	const ai = {
+		models: {
+			generateContent: () =>
+				Promise.reject(new DOMException("Aborted", "AbortError")),
+		},
+	} as unknown as GoogleGenAI;
+	const request = transcribeWithFlashFallback({
+		ai,
+		file: new File([new Uint8Array(1)], "audio.wav", { type: "audio/wav" }),
+		durationUs: 1_000_000,
+		readyUri: "https://files.test/audio",
+		readyMimeType: "audio/wav",
+		languageMode: "auto",
+		signal: new AbortController().signal,
+		onProgress: () => {},
+		onWarning: () => {},
+	});
+	await expect(request).rejects.toThrow(
+		"Gemini Flash audio transcription timed out after 3 minutes. Please retry.",
+	);
+	expect(
+		safeGeminiError(
+			new Error("Gemini Flash audio transcription timed out after 3 minutes. Please retry."),
+		).message,
+	).toBe("Gemini Flash audio transcription timed out after 3 minutes. Please retry.");
 });
 
 test("Auto Detect and English build documented native timestamp requests", () => {
