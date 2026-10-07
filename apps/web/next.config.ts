@@ -15,7 +15,7 @@ const securityHeaders = [
 			"img-src 'self' blob: data: https://plus.unsplash.com https://images.unsplash.com https://images.marblecms.com https://avatars.githubusercontent.com",
 			"font-src 'self' data:",
 			"media-src 'self' blob: data:",
-			"connect-src 'self' https://generativelanguage.googleapis.com https://*.googleapis.com",
+			"connect-src 'self' https://generativelanguage.googleapis.com https://*.googleapis.com https://api.sarvam.ai",
 			"worker-src 'self' blob:",
 			"frame-ancestors 'none'",
 			"object-src 'none'",

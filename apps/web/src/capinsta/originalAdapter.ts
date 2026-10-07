@@ -3,7 +3,11 @@ import type {
 	NeutralCaptionDocument,
 	NeutralCaptionWord,
 } from "./types";
-import type { Caption, CaptionStyleConfig } from "./original/types";
+import type {
+	AlignedWord,
+	Caption,
+	CaptionStyleConfig,
+} from "./original/types";
 import type { CapinstaCaptionStyleV1 } from "./styles/styleTypes";
 import { resolveCapinstaClipStyle } from "./styles/styleMigration";
 
@@ -133,12 +137,24 @@ export function toOriginalCaption({
 	style?: CapinstaCaptionStyleV1;
 }): Caption {
 	const wordsById = new Map(document.words.map((word) => [word.id, word]));
-	const words = clip.wordIds
+	const words: AlignedWord[] = clip.wordIds
 		.map((wordId) => wordsById.get(wordId))
 		.filter((word): word is NeutralCaptionWord => word !== undefined)
 		.map(toOriginalWord);
-	const resolvedStyle =
-		style ?? resolveCapinstaClipStyle({ document, clip });
+	if (!words.length && clip.disableActiveWordHighlighting) {
+		// A single phrase-bound render unit prevents the old renderer from inventing per-word timestamps.
+		words.push({
+			word: clip.text,
+			displayedWord: clip.text,
+			originalWord: clip.text,
+			start: clip.start,
+			end: clip.end,
+			score: 0,
+			timingSource: "provider",
+			timing_source: "provider_phrase",
+		});
+	}
+	const resolvedStyle = style ?? resolveCapinstaClipStyle({ document, clip });
 
 	return {
 		id: clip.id,

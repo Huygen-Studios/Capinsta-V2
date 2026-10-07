@@ -47,6 +47,8 @@ import { buildCapinstaCaptionTimingDiagnostics } from "@/capinsta/adapter";
 import { importedSubtitleCuesToCaptionDocument } from "@/capinsta/importedCaptionDocument";
 import { generateGeminiTranscript } from "@/capinsta/gemini/transcription";
 import { readGeminiKey } from "@/capinsta/gemini/key-storage";
+import { readSarvamKey } from "@/capinsta/sarvam/key-storage";
+import { generateSarvamTranscript } from "@/capinsta/sarvam/transcription";
 import { GeminiApiKeyDialog } from "@/capinsta/components/GeminiApiKeyDialog";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -120,6 +122,9 @@ function processingReducer(
 /* eslint-enable opencut/prefer-object-params */
 
 export function Captions() {
+	const [captionProvider, setCaptionProvider] = useState<"gemini" | "sarvam">(
+		"gemini",
+	);
 	const [selectedAudioLanguage, setSelectedAudioLanguage] =
 		useState<TranscriptionLanguage>("auto");
 	const [selectedCaptionOutput, setSelectedCaptionOutput] =
@@ -170,7 +175,10 @@ export function Captions() {
 	const isCaptionProcessing = isCaptionJobRunning(captionJob.status);
 	const isImportProcessing = importProcessing.status === "processing";
 	const isProcessing = isCaptionProcessing || isImportProcessing;
-	const hasGeminiKey = Boolean(readGeminiKey());
+	const providerName = captionProvider === "sarvam" ? "Sarvam" : "Gemini";
+	const hasProviderKey = Boolean(
+		captionProvider === "sarvam" ? readSarvamKey() : readGeminiKey(),
+	);
 
 	const activeDiagnostics = useEditor((e) =>
 		e.diagnostics.getActive({ scope: TRANSCRIPTION_DIAGNOSTICS_SCOPE }),
@@ -253,7 +261,8 @@ export function Captions() {
 			});
 			return;
 		}
-		const apiKey = readGeminiKey();
+		const apiKey =
+			captionProvider === "sarvam" ? readSarvamKey() : readGeminiKey();
 		if (!apiKey) {
 			setGeminiKeyDialogOpen(true);
 			return;
@@ -299,7 +308,11 @@ export function Captions() {
 						Math.round((audioForCaptions.duration ?? 0) * 1_000_000)),
 			);
 			const nextWarnings: string[] = [];
-			const transcript = await generateGeminiTranscript({
+			const generateTranscript =
+				captionProvider === "sarvam"
+					? generateSarvamTranscript
+					: generateGeminiTranscript;
+			const transcript = await generateTranscript({
 				audioFile: audioForCaptions.file,
 				apiKey,
 				sourceAsset: {
@@ -356,7 +369,7 @@ export function Captions() {
 				return;
 			}
 
-			setWarnings(["Generated with Gemini AI.", ...nextWarnings]);
+			setWarnings([`Generated with ${providerName} AI.`, ...nextWarnings]);
 			dispatchCaptionJob({
 				type: "done",
 				message: "Captions ready.",
@@ -579,7 +592,9 @@ export function Captions() {
 							onClick={() => setGeminiKeyDialogOpen(true)}
 							disabled={isProcessing}
 						>
-							{hasGeminiKey ? "Change Gemini key" : "Add Gemini key"}
+							{hasProviderKey
+								? `Change ${providerName} key`
+								: `Add ${providerName} key`}
 						</Button>
 						{!isProcessing &&
 							activeDiagnostics.map((diagnostic) => (
@@ -660,6 +675,8 @@ export function Captions() {
 			ref={containerRef}
 		>
 			<GeminiApiKeyDialog
+				key={captionProvider}
+				provider={captionProvider}
 				open={geminiKeyDialogOpen}
 				onOpenChange={setGeminiKeyDialogOpen}
 				onSaved={() => dispatchCaptionJob({ type: "reset" })}
@@ -678,6 +695,26 @@ export function Captions() {
 			>
 				<SectionContent className="flex flex-col gap-4 h-full pt-1">
 					<SectionFields>
+						<SectionField label="AI provider">
+							<Select
+								value={captionProvider}
+								onValueChange={(value) => {
+									if (value === "gemini" || value === "sarvam")
+										setCaptionProvider(value);
+								}}
+								disabled={isProcessing}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Select provider" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="gemini">Gemini (word timing)</SelectItem>
+									<SelectItem value="sarvam">
+										Sarvam Saaras v4 (phrase timing)
+									</SelectItem>
+								</SelectContent>
+							</Select>
+						</SectionField>
 						{isAiCaptionGenerationEnabled && (
 							<SectionField label="Media">
 								<Select
@@ -797,15 +834,19 @@ export function Captions() {
 										size="sm"
 										onClick={() => setGeminiKeyDialogOpen(true)}
 									>
-										Change Gemini API key
+										Change {providerName} API key
 									</Button>
 									<a
-										href="https://aistudio.google.com/app/apikey"
+										href={
+											captionProvider === "sarvam"
+												? "https://dashboard.sarvam.ai/"
+												: "https://aistudio.google.com/app/apikey"
+										}
 										target="_blank"
 										rel="noreferrer"
 										className="text-primary text-sm underline underline-offset-4"
 									>
-										Get a Gemini API key
+										Get a {providerName} API key
 									</a>
 								</>
 							) : null}

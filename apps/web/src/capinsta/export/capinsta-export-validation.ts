@@ -102,9 +102,18 @@ function validateRecords(
 		},
 		{
 			name: "capinsta-words-present",
-			passed: records.some((record) => record.document.words.length > 0),
+			passed: records.some(
+				(record) =>
+					record.document.words.length > 0 ||
+					(record.document.timing.sourceOfTruth === "clips" &&
+						record.document.clips.length > 0 &&
+						record.document.clips.every(
+							(clip) =>
+								clip.disableActiveWordHighlighting && clip.wordIds.length === 0,
+						)),
+			),
 			message:
-				"At least one timed caption word is required for CapInsta export.",
+				"Timed caption words or phrase-timed clips are required for CapInsta export.",
 		},
 		{
 			name: "capinsta-unique-clip-ids",

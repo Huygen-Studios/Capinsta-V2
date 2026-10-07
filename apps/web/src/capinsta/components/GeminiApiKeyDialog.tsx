@@ -19,24 +19,39 @@ import {
 	readGeminiKey,
 	storeGeminiKey,
 } from "../gemini/key-storage";
+import {
+	forgetSarvamKey,
+	isSarvamKeyRemembered,
+	readSarvamKey,
+	storeSarvamKey,
+} from "../sarvam/key-storage";
 
 export function GeminiApiKeyDialog({
+	provider = "gemini",
 	open,
 	onOpenChange,
 	onSaved,
 }: {
+	provider?: "gemini" | "sarvam";
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onSaved?: () => void;
 }) {
+	const sarvam = provider === "sarvam";
+	const providerName = sarvam ? "Sarvam" : "Gemini";
 	const [key, setKey] = useState("");
-	const [remember, setRemember] = useState(isGeminiKeyRemembered);
-	const [hasKey, setHasKey] = useState(() => Boolean(readGeminiKey()));
+	const [remember, setRemember] = useState(() =>
+		sarvam ? isSarvamKeyRemembered() : isGeminiKeyRemembered(),
+	);
+	const [hasKey, setHasKey] = useState(() =>
+		Boolean(sarvam ? readSarvamKey() : readGeminiKey()),
+	);
 	const [error, setError] = useState<string | null>(null);
 
 	const save = () => {
 		try {
-			storeGeminiKey(key, remember);
+			if (sarvam) storeSarvamKey(key, remember);
+			else storeGeminiKey(key, remember);
 			setHasKey(true);
 			setKey("");
 			setError(null);
@@ -53,15 +68,17 @@ export function GeminiApiKeyDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>Gemini API Key</DialogTitle>
+					<DialogTitle>{providerName} API Key</DialogTitle>
 					<DialogDescription>
-						Your key is sent directly from this browser to Google Gemini.
-						CapInsta does not send it to its server or save it in projects.
+						Your key is sent directly from this browser to{" "}
+						{sarvam ? "Sarvam" : "Google Gemini"}. CapInsta does not send it to
+						its server or save it in projects.
 					</DialogDescription>
 				</DialogHeader>
 				<DialogBody>
 					<p className="text-muted-foreground text-sm">
-						Use a valid Gemini API key from Google AI Studio.
+						Use a valid {providerName} API key{" "}
+						{sarvam ? "from the Sarvam dashboard" : "from Google AI Studio"}.
 					</p>
 					{hasKey ? (
 						<p className="text-muted-foreground text-sm">
@@ -69,16 +86,18 @@ export function GeminiApiKeyDialog({
 						</p>
 					) : null}
 					<label
-						htmlFor="gemini-api-key"
+						htmlFor="caption-api-key"
 						className="flex flex-col gap-2 text-sm font-medium"
 					>
 						API key
 						<Input
-							id="gemini-api-key"
+							id="caption-api-key"
 							type="password"
 							autoComplete="off"
 							placeholder={
-								hasKey ? "Enter a replacement key" : "Paste your Gemini API key"
+								hasKey
+									? "Enter a replacement key"
+									: `Paste your ${providerName} API key`
 							}
 							value={key}
 							onChange={(event) => setKey(event.target.value)}
@@ -88,11 +107,11 @@ export function GeminiApiKeyDialog({
 						/>
 					</label>
 					<label
-						htmlFor="remember-gemini-key"
+						htmlFor="remember-caption-key"
 						className="flex items-start gap-2 text-sm"
 					>
 						<Checkbox
-							id="remember-gemini-key"
+							id="remember-caption-key"
 							checked={remember}
 							onCheckedChange={(checked) => setRemember(checked === true)}
 						/>
@@ -105,12 +124,16 @@ export function GeminiApiKeyDialog({
 						</span>
 					</label>
 					<a
-						href="https://aistudio.google.com/app/apikey"
+						href={
+							sarvam
+								? "https://dashboard.sarvam.ai/"
+								: "https://aistudio.google.com/app/apikey"
+						}
 						target="_blank"
 						rel="noreferrer"
 						className="text-primary text-sm underline underline-offset-4"
 					>
-						Get a Gemini API key
+						Get a {providerName} API key
 					</a>
 					{error ? <p className="text-destructive text-sm">{error}</p> : null}
 				</DialogBody>
@@ -120,7 +143,8 @@ export function GeminiApiKeyDialog({
 							type="button"
 							variant="outline"
 							onClick={() => {
-								forgetGeminiKey();
+								if (sarvam) forgetSarvamKey();
+								else forgetGeminiKey();
 								setHasKey(false);
 								setKey("");
 							}}

@@ -394,6 +394,18 @@ export function rechunkNeutralCaptionDocumentForPreset({
 	};
 	const stylePresetId = resolvePresetId(stylePreset);
 	const defaultStyle = getCapinstaPresetStyle(stylePresetId);
+	if (!document.words.length) {
+		return {
+			...document,
+			stylePresetId,
+			style: structuredClone(defaultStyle),
+			clips: document.clips.map((clip) => ({
+				...clip,
+				stylePresetId,
+				style: structuredClone(defaultStyle),
+			})),
+		};
+	}
 	const sourceAssetId =
 		document.sourceTranscriptRef.sourceAssetId ||
 		document.id.replace(/^capinsta-doc-/, "");
@@ -453,6 +465,17 @@ export function rechunkNeutralCaptionDocumentWithConfig({
 	const defaultStyle = document.style
 		? document.style
 		: getCapinstaPresetStyle(stylePresetId);
+	if (!document.words.length) {
+		const style = normalizeCapinstaCaptionStyle({
+			...defaultStyle,
+			chunking: { ...(defaultStyle.chunking ?? {}), ...chunkingConfig },
+		});
+		return {
+			...document,
+			style,
+			clips: document.clips.map((clip) => ({ ...clip, style })),
+		};
+	}
 	const sourceAssetId =
 		document.sourceTranscriptRef.sourceAssetId ||
 		document.id.replace(/^capinsta-doc-/, "");
@@ -529,14 +552,16 @@ export function capinstaTranscriptToCaptionDocument(
 		stylePresetId,
 		defaultStyle,
 	});
-	const canonicalTiming = buildRustCaptionPages({
-		words,
-		durationSeconds: transcript.source.durationSeconds,
-		timing: transcript.timing,
-		chunkingConfig: resolveChunkingConfig({
-			stylePreset: transcript.stylePreset,
-		}),
-	});
+	const canonicalTiming = words.length
+		? buildRustCaptionPages({
+				words,
+				durationSeconds: transcript.source.durationSeconds,
+				timing: transcript.timing,
+				chunkingConfig: resolveChunkingConfig({
+					stylePreset: transcript.stylePreset,
+				}),
+			})
+		: undefined;
 
 	return {
 		id: documentIdForTranscript(transcript),
