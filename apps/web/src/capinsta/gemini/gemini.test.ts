@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 /* eslint-disable opencut/prefer-object-params -- Storage test double must implement the platform's positional interface. */
 import { createAudioChunks, mergeOverlappingWords } from "./chunking";
 import {
+	geminiProviderDiagnostic,
 	isGeminiServiceUnavailable,
+	isGeminiTranscriptionFallbackEligible,
 	redactGeminiSecrets,
 	safeGeminiError,
 } from "./errors";
@@ -15,13 +17,18 @@ import {
 import { geminiWordsToCapinstaTranscript } from "./transcript-adapter";
 import {
 	parseGeminiOffsetUs,
+	parseGenerateContentTimedAnnotations,
 	parseTimedAnnotations,
 	validateTimedWords,
 } from "./timing";
 import type { GeminiTimedWord } from "./types";
 import {
 	abortableDelay,
+	buildGenerateContentTranscriptionRequest,
+	buildInteractionTranscriptionRequest,
 	MAX_TRANSCRIPTION_ATTEMPTS,
+	requestTranscriptionWithFallback,
+	withGeminiFileCleanup,
 } from "./transcription";
 import {
 	applyTranslationItems,
@@ -50,7 +57,9 @@ class MemoryStorage implements Storage {
 	}
 }
 
-const nativeWord = (overrides: Partial<GeminiTimedWord> = {}): GeminiTimedWord => ({
+const nativeWord = (
+	overrides: Partial<GeminiTimedWord> = {},
+): GeminiTimedWord => ({
 	id: "word-1",
 	text: "Hello",
 	startUs: 100_000,
@@ -77,7 +86,9 @@ describe("Gemini BYOK key storage", () => {
 
 	test("defaults to session storage", () => {
 		storeGeminiKey("test-session-key", false);
-		expect(sessionStorage.getItem("capinsta.geminiApiKey")).toBe("test-session-key");
+		expect(sessionStorage.getItem("capinsta.geminiApiKey")).toBe(
+			"test-session-key",
+		);
 		expect(localStorage.getItem("capinsta.geminiApiKey")).toBeNull();
 		expect(readGeminiKey()).toBe("test-session-key");
 	});
@@ -85,7 +96,9 @@ describe("Gemini BYOK key storage", () => {
 	test("remember is opt-in and forget clears both stores and memory", () => {
 		storeGeminiKey("test-local-key", true);
 		expect(isGeminiKeyRemembered()).toBe(true);
-		expect(localStorage.getItem("capinsta.geminiApiKey")).toBe("test-local-key");
+		expect(localStorage.getItem("capinsta.geminiApiKey")).toBe(
+			"test-local-key",
+		);
 		forgetGeminiKey();
 		expect(readGeminiKey()).toBe("");
 		expect(sessionStorage.length).toBe(0);
@@ -128,7 +141,10 @@ describe("Gemini timing", () => {
 
 	test("rejects non-monotonic and out-of-range timing", () => {
 		const backward = validateTimedWords({
-			words: [nativeWord(), nativeWord({ id: "word-2", startUs: 1, endUs: 20_000 })],
+			words: [
+				nativeWord(),
+				nativeWord({ id: "word-2", startUs: 1, endUs: 20_000 }),
+			],
 			durationUs: 1_000_000,
 			stage: "audio",
 		});
@@ -152,9 +168,24 @@ describe("Gemini timing", () => {
 						content: [
 							{
 								annotations: [
-									{ type: "word_info", text: "one", start_offset: "0.1s", end_offset: "0.2s" },
-									{ type: "word_info", text: "two", start_offset: "0.2s", end_offset: "0.2s" },
-									{ type: "word_info", text: "three", start_offset: "0.3s", end_offset: "0.5s" },
+									{
+										type: "word_info",
+										text: "one",
+										start_offset: "0.1s",
+										end_offset: "0.2s",
+									},
+									{
+										type: "word_info",
+										text: "two",
+										start_offset: "0.2s",
+										end_offset: "0.2s",
+									},
+									{
+										type: "word_info",
+										text: "three",
+										start_offset: "0.3s",
+										end_offset: "0.5s",
+									},
 								],
 							},
 						],
@@ -181,10 +212,19 @@ describe("Gemini chunk mapping", () => {
 	});
 
 	test("maps the chunk offset once and deduplicates the overlap", () => {
-		const previous = [nativeWord({ id: "old", text: "same", startUs: 1_199_100_000, endUs: 1_199_500_000 })];
+		const previous = [
+			nativeWord({
+				id: "old",
+				text: "same",
+				startUs: 1_199_100_000,
+				endUs: 1_199_500_000,
+			}),
+		];
 		const merged = mergeOverlappingWords({
 			previous,
-			incoming: [nativeWord({ text: "same", startUs: 100_000, endUs: 500_000 })],
+			incoming: [
+				nativeWord({ text: "same", startUs: 100_000, endUs: 500_000 }),
+			],
 			offsetUs: 1_199_000_000,
 		});
 		expect(merged).toHaveLength(1);
@@ -207,7 +247,9 @@ test("Gemini adapter contains timing metadata but never a key", () => {
 	expect(serialized).toContain("gemini-3.5-transcribe");
 	expect(serialized).not.toContain("AIza");
 	expect(serialized).not.toContain("apiKey");
-	expect(redactGeminiSecrets("key=AIzaabcdefghijklmnopqrstuvwxyz123")).not.toContain("AIza");
+	expect(
+		redactGeminiSecrets("key=AIzaabcdefghijklmnopqrstuvwxyz123"),
+	).not.toContain("AIza");
 });
 
 test("translation preserves timing and rejects changed ordering", () => {
@@ -256,31 +298,216 @@ test("translation falls back after an exhausted Gemini 503", async () => {
 	});
 	expect(result).toBe("converted");
 	expect(attempted).toEqual(["gemini-3.5-flash-lite", "gemini-3.5-flash"]);
-	expect(isGeminiServiceUnavailable(new Error("503 model overloaded"))).toBe(true);
+	expect(isGeminiServiceUnavailable(new Error("503 model overloaded"))).toBe(
+		true,
+	);
 });
 
 test("cancellation is immediate and deliberate timing retry is bounded", async () => {
 	const controller = new AbortController();
 	controller.abort();
-	await expect(abortableDelay(60_000, controller.signal)).rejects.toMatchObject({
-		name: "AbortError",
-	});
+	await expect(abortableDelay(60_000, controller.signal)).rejects.toMatchObject(
+		{
+			name: "AbortError",
+		},
+	);
 	expect(MAX_TRANSCRIPTION_ATTEMPTS).toBe(2);
 });
 
-test("safe provider errors redact keys while retaining timing guidance", () => {
+test("safe provider errors classify status without blaming valid keys", () => {
 	expect(
 		safeGeminiError(new Error("Gemini returned missing word timestamps."))
 			.message,
 	).toBe("Gemini returned missing word timestamps.");
-	expect(safeGeminiError(new Error("api_key=AIzaabcdefghijklmnopqrstuvwxyz123")).message).not.toContain("AIza");
-	expect(safeGeminiError({ status: 403, message: "Forbidden" }).message).toContain(
-		"authorization key",
+	expect(
+		safeGeminiError({
+			status: 400,
+			code: "INVALID_ARGUMENT",
+			message: "Thinking is not enabled for this model",
+		}).message,
+	).not.toContain("Gemini key");
+	expect(
+		safeGeminiError({
+			status: 400,
+			code: "INVALID_ARGUMENT",
+			message: "Thinking is not enabled for this model",
+		}).message,
+	).toContain("Your API key was accepted");
+	expect(
+		safeGeminiError({
+			status: 400,
+			message: "API key not valid. API_KEY_INVALID",
+		}).message,
+	).toBe(
+		"This Gemini API key is invalid. Replace it with a valid Google AI Studio API key.",
 	);
 	expect(
-		safeGeminiError({ status: 400, message: "API key not valid. API_KEY_INVALID" })
-			.message,
-	).toBe(
-		"This Gemini API key is invalid. Create a new authorization key in Google AI Studio, then replace it here.",
+		safeGeminiError({ status: 401, message: "Unauthenticated" }).message,
+	).toBe("Google could not authenticate this Gemini API key.");
+	expect(safeGeminiError({ status: 403, message: "Forbidden" }).message).toBe(
+		"Google denied access to the Gemini API. Check the key's project, API permissions, restrictions, and model access.",
 	);
+	expect(
+		safeGeminiError({ status: 429, message: "Quota exceeded" }).message,
+	).toContain("quota or rate limit");
+	expect(safeGeminiError({ status: 503, message: "Unavailable" }).message).toBe(
+		"Google Gemini is temporarily unavailable. Please retry.",
+	);
+	expect(
+		safeGeminiError({
+			status: 400,
+			code: "INVALID_ARGUMENT",
+			message: "Unsupported transcription option",
+		}).message,
+	).toBe(
+		"Gemini rejected the transcription request: Unsupported transcription option",
+	);
+});
+
+test("provider diagnostics redact credentials in messages and query strings", () => {
+	const secret = "AIzaabcdefghijklmnopqrstuvwxyz123";
+	const diagnostic = geminiProviderDiagnostic({
+		status: 400,
+		code: "INVALID_ARGUMENT",
+		message: `failed ?key=${secret}&next=1 Authorization: Bearer ${secret}`,
+	});
+	const serialized = JSON.stringify(diagnostic);
+	expect(serialized).not.toContain(secret);
+	expect(redactGeminiSecrets(`?key=${secret}`)).not.toContain(secret);
+});
+
+test("Auto Detect and English build documented native timestamp requests", () => {
+	const auto = buildInteractionTranscriptionRequest({
+		uri: "https://files.test/audio",
+		mimeType: "audio/wav",
+		languageMode: "auto",
+	});
+	expect(auto.generation_config.transcription_config.language_codes).toEqual(
+		[],
+	);
+	expect(auto.generation_config.transcription_config.mode).toEqual({
+		type: "verbatim",
+		timestamp_granularities: ["word"],
+	});
+	const signal = new AbortController().signal;
+	const english = buildGenerateContentTranscriptionRequest({
+		uri: "https://files.test/audio",
+		mimeType: "audio/wav",
+		languageMode: "english",
+		signal,
+	});
+	expect(english.config.audioTranscriptionConfig).toEqual({
+		languageCodes: ["en-IN"],
+		wordTimestamp: true,
+	});
+});
+
+test("transcription fallback is limited to provider INVALID_ARGUMENT", async () => {
+	let fallbacks = 0;
+	const eligible = {
+		status: 400,
+		code: "INVALID_ARGUMENT",
+		message: "Thinking is not enabled for this model",
+	};
+	expect(isGeminiTranscriptionFallbackEligible(eligible)).toBe(true);
+	const result = await requestTranscriptionWithFallback({
+		signal: new AbortController().signal,
+		primary: () => Promise.reject(eligible),
+		fallback: () => {
+			fallbacks++;
+			return Promise.resolve("fallback");
+		},
+	});
+	expect(result).toEqual({ value: "fallback", usedFallback: true });
+	for (const error of [
+		{ status: 400, message: "API key not valid. API_KEY_INVALID" },
+		{ status: 401, message: "Unauthenticated" },
+		{ status: 403, message: "Forbidden" },
+		{ status: 429, message: "Quota exceeded" },
+	]) {
+		await expect(
+			requestTranscriptionWithFallback({
+				signal: new AbortController().signal,
+				primary: () => Promise.reject(error),
+				fallback: () => {
+					fallbacks++;
+					return Promise.resolve("unexpected");
+				},
+			}),
+		).rejects.toBe(error);
+	}
+	const cancelled = new DOMException("Cancelled", "AbortError");
+	await expect(
+		requestTranscriptionWithFallback({
+			signal: new AbortController().signal,
+			primary: () => Promise.reject(cancelled),
+			fallback: () => {
+				fallbacks++;
+				return Promise.resolve("unexpected");
+			},
+		}),
+	).rejects.toBe(cancelled);
+	expect(fallbacks).toBe(1);
+});
+
+test("GenerateContent fallback keeps native timing and rejects invalid timing", () => {
+	const valid = parseGenerateContentTimedAnnotations(
+		{
+			candidates: [
+				{
+					content: {
+						parts: [
+							{
+								audioTranscription: {
+									text: "Hello",
+									words: [
+										{ word: "Hello", startOffset: "0.1s", endOffset: "0.4s" },
+									],
+								},
+							},
+						],
+					},
+				},
+			],
+		},
+		1_000_000,
+	);
+	expect(valid.ok).toBe(true);
+	if (valid.ok) expect(valid.words[0]?.timingQuality).toBe("native");
+	const invalid = parseGenerateContentTimedAnnotations(
+		{
+			candidates: [
+				{
+					content: {
+						parts: [
+							{
+								audioTranscription: {
+									text: "late",
+									words: [{ word: "late", startOffset: "2s", endOffset: "3s" }],
+								},
+							},
+						],
+					},
+				},
+			],
+		},
+		1_000_000,
+	);
+	expect(invalid.ok).toBe(false);
+});
+
+test("uploaded Gemini files are cleaned up when transcription throws", async () => {
+	let cleaned = false;
+	const failure = new Error("transcription failed");
+	await expect(
+		withGeminiFileCleanup({
+			run: () => Promise.reject(failure),
+			cleanup: () => {
+				cleaned = true;
+				return Promise.resolve();
+			},
+			onCleanupWarning: () => {},
+		}),
+	).rejects.toBe(failure);
+	expect(cleaned).toBe(true);
 });

@@ -43,7 +43,9 @@ export function GeminiApiKeyDialog({
 			onOpenChange(false);
 			onSaved?.();
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Could not save the key.");
+			setError(
+				cause instanceof Error ? cause.message : "Could not save the key.",
+			);
 		}
 	};
 
@@ -53,27 +55,31 @@ export function GeminiApiKeyDialog({
 				<DialogHeader>
 					<DialogTitle>Gemini API Key</DialogTitle>
 					<DialogDescription>
-						Your key is sent directly from this browser to Google Gemini. CapInsta
-						does not send it to its server or save it in projects.
+						Your key is sent directly from this browser to Google Gemini.
+						CapInsta does not send it to its server or save it in projects.
 					</DialogDescription>
 				</DialogHeader>
 				<DialogBody>
 					<p className="text-muted-foreground text-sm">
-						Use an authorization key created in Google AI Studio. Older
-						unrestricted standard keys may be rejected by Google.
+						Use a valid Gemini API key from Google AI Studio.
 					</p>
 					{hasKey ? (
 						<p className="text-muted-foreground text-sm">
 							A key is saved. Paste a new key below to replace it.
 						</p>
 					) : null}
-					<label htmlFor="gemini-api-key" className="flex flex-col gap-2 text-sm font-medium">
+					<label
+						htmlFor="gemini-api-key"
+						className="flex flex-col gap-2 text-sm font-medium"
+					>
 						API key
 						<Input
 							id="gemini-api-key"
 							type="password"
 							autoComplete="off"
-							placeholder={hasKey ? "Enter a replacement key" : "Paste your Gemini API key"}
+							placeholder={
+								hasKey ? "Enter a replacement key" : "Paste your Gemini API key"
+							}
 							value={key}
 							onChange={(event) => setKey(event.target.value)}
 							onKeyDown={(event) => {
@@ -81,7 +87,10 @@ export function GeminiApiKeyDialog({
 							}}
 						/>
 					</label>
-					<label htmlFor="remember-gemini-key" className="flex items-start gap-2 text-sm">
+					<label
+						htmlFor="remember-gemini-key"
+						className="flex items-start gap-2 text-sm"
+					>
 						<Checkbox
 							id="remember-gemini-key"
 							checked={remember}
@@ -101,7 +110,7 @@ export function GeminiApiKeyDialog({
 						rel="noreferrer"
 						className="text-primary text-sm underline underline-offset-4"
 					>
-						Create a compatible Gemini authorization key
+						Get a Gemini API key
 					</a>
 					{error ? <p className="text-destructive text-sm">{error}</p> : null}
 				</DialogBody>

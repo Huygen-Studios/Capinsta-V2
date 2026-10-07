@@ -183,7 +183,8 @@ export function Captions() {
 	const selectedMediaValue = selectedMediaAsset?.id ?? "";
 	const isSelectedMediaUploadable = Boolean(
 		selectedMediaAsset &&
-			(selectedMediaAsset.type === "video" || selectedMediaAsset.type === "audio"),
+		(selectedMediaAsset.type === "video" ||
+			selectedMediaAsset.type === "audio"),
 	);
 	const aiCaptionDisabledReason = !selectedMediaAsset
 		? "Select imported local media to generate captions."
@@ -532,6 +533,9 @@ export function Captions() {
 	const error =
 		captionJob.errorMessage ??
 		(importProcessing.status === "idle" ? importProcessing.error : null);
+	const keyRelatedError = Boolean(
+		error && /API key|authenticate|denied access/i.test(error),
+	);
 	const allWarnings = [
 		...warnings,
 		...(importProcessing.status === "idle" ? importProcessing.warnings : []),
@@ -785,22 +789,26 @@ export function Captions() {
 					{error && (
 						<div className="bg-destructive/10 border-destructive/20 flex flex-col gap-2 rounded-md border p-3">
 							<p className="text-destructive text-sm">{error}</p>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onClick={() => setGeminiKeyDialogOpen(true)}
-							>
-								Change Gemini API key
-							</Button>
-							<a
-								href="https://aistudio.google.com/app/apikey"
-								target="_blank"
-								rel="noreferrer"
-								className="text-primary text-sm underline underline-offset-4"
-							>
-								Create a new Gemini authorization key
-							</a>
+							{keyRelatedError ? (
+								<>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onClick={() => setGeminiKeyDialogOpen(true)}
+									>
+										Change Gemini API key
+									</Button>
+									<a
+										href="https://aistudio.google.com/app/apikey"
+										target="_blank"
+										rel="noreferrer"
+										className="text-primary text-sm underline underline-offset-4"
+									>
+										Get a Gemini API key
+									</a>
+								</>
+							) : null}
 						</div>
 					)}
 					{allWarnings.length > 0 && (

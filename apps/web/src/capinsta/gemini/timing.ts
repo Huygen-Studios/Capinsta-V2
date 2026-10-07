@@ -201,11 +201,7 @@ function repairDegenerateWords(
 			anchorUs - previousEndUs <= MAX_REPAIR_WINDOW_US
 		) {
 			startUs = previousEndUs;
-		} else if (
-			next &&
-			next.startUs === anchorUs &&
-			next.endUs > next.startUs
-		) {
+		} else if (next && next.startUs === anchorUs && next.endUs > next.startUs) {
 			endUs = next.endUs;
 			partner = next;
 			quality = "shared";
@@ -238,13 +234,41 @@ function repairDegenerateWords(
 				timingQuality: quality,
 				...(partner || last > first ? { alignmentGroupId: groupId } : {}),
 			};
-			warnings.push(`Word ${wordIndex + 1} timing was repaired from neighboring anchors.`);
+			warnings.push(
+				`Word ${wordIndex + 1} timing was repaired from neighboring anchors.`,
+			);
 		}
 		previousEndUs = Math.max(previousEndUs, endUs);
 	}
-	const validated = validateTimedWords({ words: output, durationUs, stage: "audio" });
+	const validated = validateTimedWords({
+		words: output,
+		durationUs,
+		stage: "audio",
+	});
 	if (validated.ok) validated.warnings.unshift(...warnings);
 	return validated;
+}
+
+function finishTimedWords({
+	words,
+	transcript,
+	durationUs,
+}: {
+	words: GeminiTimedWord[];
+	transcript: string;
+	durationUs: number;
+}): TimingResult {
+	if (!words.length && transcript.trim()) return failure("MISSING_TIMESTAMPS");
+	const checked = validateTimedWords({
+		words,
+		durationUs,
+		stage: "audio",
+		allowZeroDuration: true,
+	});
+	if (!checked.ok) return checked;
+	const repaired = repairDegenerateWords(checked.words, durationUs);
+	if (repaired.ok) repaired.warnings.unshift(...checked.warnings);
+	return repaired;
 }
 
 export function parseTimedAnnotations(
@@ -301,17 +325,64 @@ export function parseTimedAnnotations(
 			}
 		}
 	}
-	if (!words.length && transcript.trim()) return failure("MISSING_TIMESTAMPS");
-	const checked = validateTimedWords({
-		words,
-		durationUs,
-		stage: "audio",
-		allowZeroDuration: true,
-	});
-	if (!checked.ok) return checked;
-	const repaired = repairDegenerateWords(checked.words, durationUs);
-	if (repaired.ok) repaired.warnings.unshift(...checked.warnings);
-	return repaired;
+	return finishTimedWords({ words, transcript, durationUs });
+}
+
+export function parseGenerateContentTimedAnnotations(
+	payload: unknown,
+	durationUs: number,
+): TimingResult {
+	const response = payload as {
+		text?: string;
+		candidates?: Array<{
+			content?: {
+				parts?: Array<{
+					audioTranscription?: {
+						text?: string;
+						speakerLabel?: string;
+						words?: Array<{
+							word?: string;
+							startOffset?: string;
+							endOffset?: string;
+						}>;
+					};
+				}>;
+			};
+		}>;
+	} | null;
+	const words: GeminiTimedWord[] = [];
+	let transcript = response?.text ?? "";
+	for (const candidate of response?.candidates ?? []) {
+		for (const part of candidate.content?.parts ?? []) {
+			const transcription = part.audioTranscription;
+			if (!transcription) continue;
+			transcript += transcription.text ?? "";
+			for (const wordInfo of transcription.words ?? []) {
+				if (typeof wordInfo.word !== "string") {
+					return failure("INVALID_WORD_DURATION", [words.length]);
+				}
+				try {
+					const startUs = parseGeminiOffsetUs(wordInfo.startOffset);
+					const endUs = parseGeminiOffsetUs(wordInfo.endOffset);
+					words.push({
+						id: `gemini-word-${words.length + 1}`,
+						text: wordInfo.word,
+						startUs,
+						endUs,
+						rawStartUs: startUs,
+						rawEndUs: endUs,
+						timingQuality: "native",
+						...(transcription.speakerLabel
+							? { speaker: transcription.speakerLabel }
+							: {}),
+					});
+				} catch {
+					return failure("INVALID_TIMESTAMP_FORMAT", [words.length]);
+				}
+			}
+		}
+	}
+	return finishTimedWords({ words, transcript, durationUs });
 }
 
 export function shouldRetryTiming(result: TimingResult): boolean {
@@ -328,7 +399,10 @@ export function shouldRetryTiming(result: TimingResult): boolean {
 }
 
 export function timingFailureMessage(reason: TimingFailure): string {
-	if (reason === "TIMESTAMP_UNIT_MISMATCH" || reason === "INVALID_TIMESTAMP_FORMAT") {
+	if (
+		reason === "TIMESTAMP_UNIT_MISMATCH" ||
+		reason === "INVALID_TIMESTAMP_FORMAT"
+	) {
 		return "CapInsta could not interpret Gemini word timestamps.";
 	}
 	if (reason === "PROJECT_DURATION_MISMATCH") {
