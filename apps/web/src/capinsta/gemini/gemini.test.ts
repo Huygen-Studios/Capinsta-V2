@@ -465,7 +465,7 @@ test("Flash audio request asks for structured original-language word timing", ()
 		languageMode: "auto",
 		signal: new AbortController().signal,
 	});
-	expect(request.model).toBe("gemini-3.5-flash");
+	expect(request.model).toBe("gemini-3.8-flash");
 	expect(request.config.responseMimeType).toBe("application/json");
 	expect(request.contents[0]?.parts[0]).toEqual({
 		fileData: { fileUri: "https://files.test/audio", mimeType: "audio/wav" },
