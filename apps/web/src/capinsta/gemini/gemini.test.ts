@@ -274,4 +274,7 @@ test("safe provider errors redact keys while retaining timing guidance", () => {
 			.message,
 	).toBe("Gemini returned missing word timestamps.");
 	expect(safeGeminiError(new Error("api_key=AIzaabcdefghijklmnopqrstuvwxyz123")).message).not.toContain("AIza");
+	expect(safeGeminiError({ status: 403, message: "Forbidden" }).message).toContain(
+		"Replace the Gemini API key",
+	);
 });

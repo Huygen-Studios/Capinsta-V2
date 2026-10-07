@@ -58,6 +58,11 @@ export function GeminiApiKeyDialog({
 					</DialogDescription>
 				</DialogHeader>
 				<DialogBody>
+					{hasKey ? (
+						<p className="text-muted-foreground text-sm">
+							A key is saved. Paste a new key below to replace it.
+						</p>
+					) : null}
 					<label htmlFor="gemini-api-key" className="flex flex-col gap-2 text-sm font-medium">
 						API key
 						<Input
@@ -111,7 +116,7 @@ export function GeminiApiKeyDialog({
 						</Button>
 					) : null}
 					<Button type="button" onClick={save} disabled={!key.trim()}>
-						Save key
+						{hasKey ? "Replace key" : "Save key"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

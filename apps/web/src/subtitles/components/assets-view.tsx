@@ -170,6 +170,7 @@ export function Captions() {
 	const isCaptionProcessing = isCaptionJobRunning(captionJob.status);
 	const isImportProcessing = importProcessing.status === "processing";
 	const isProcessing = isCaptionProcessing || isImportProcessing;
+	const hasGeminiKey = Boolean(readGeminiKey());
 
 	const activeDiagnostics = useEditor((e) =>
 		e.diagnostics.getActive({ scope: TRANSCRIPTION_DIAGNOSTICS_SCOPE }),
@@ -574,7 +575,7 @@ export function Captions() {
 							onClick={() => setGeminiKeyDialogOpen(true)}
 							disabled={isProcessing}
 						>
-							Gemini key
+							{hasGeminiKey ? "Change Gemini key" : "Add Gemini key"}
 						</Button>
 						{!isProcessing &&
 							activeDiagnostics.map((diagnostic) => (
@@ -657,6 +658,7 @@ export function Captions() {
 			<GeminiApiKeyDialog
 				open={geminiKeyDialogOpen}
 				onOpenChange={setGeminiKeyDialogOpen}
+				onSaved={() => dispatchCaptionJob({ type: "reset" })}
 			/>
 			<input
 				ref={fileInputRef}
@@ -781,8 +783,16 @@ export function Captions() {
 						</>
 					)}
 					{error && (
-						<div className="bg-destructive/10 border-destructive/20 rounded-md border p-3">
+						<div className="bg-destructive/10 border-destructive/20 flex flex-col gap-2 rounded-md border p-3">
 							<p className="text-destructive text-sm">{error}</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => setGeminiKeyDialogOpen(true)}
+							>
+								Change Gemini API key
+							</Button>
 						</div>
 					)}
 					{allWarnings.length > 0 && (
