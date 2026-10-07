@@ -385,6 +385,57 @@ export function parseGenerateContentTimedAnnotations(
 	return finishTimedWords({ words, transcript, durationUs });
 }
 
+export function parseEstimatedFlashWords(
+	responseText: string | undefined,
+	durationUs: number,
+): TimingResult {
+	if (!responseText?.trim()) return failure("MISSING_TIMESTAMPS");
+	let payload: unknown;
+	try {
+		payload = JSON.parse(responseText);
+	} catch {
+		return failure("MISSING_TIMESTAMPS");
+	}
+	if (
+		typeof payload !== "object" ||
+		payload === null ||
+		!("words" in payload) ||
+		!Array.isArray(payload.words) ||
+		!payload.words.length
+	) {
+		return failure("MISSING_TIMESTAMPS");
+	}
+	const words: GeminiTimedWord[] = [];
+	for (const [index, item] of payload.words.entries()) {
+		if (
+			typeof item !== "object" ||
+			item === null ||
+			typeof item.text !== "string" ||
+			!item.text.trim() ||
+			/\s/u.test(item.text.trim()) ||
+			typeof item.start !== "number" ||
+			typeof item.end !== "number" ||
+			!Number.isFinite(item.start) ||
+			!Number.isFinite(item.end)
+		) {
+			return failure("INVALID_WORD_DURATION", [index]);
+		}
+		const startUs = Math.round(item.start * 1_000_000);
+		const endUs = Math.round(item.end * 1_000_000);
+		words.push({
+			id: `gemini-word-${index + 1}`,
+			text: item.text,
+			startUs,
+			endUs,
+			rawStartUs: startUs,
+			rawEndUs: endUs,
+			timingQuality: "native",
+			modelEstimated: true,
+		});
+	}
+	return validateTimedWords({ words, durationUs, stage: "audio" });
+}
+
 export function shouldRetryTiming(result: TimingResult): boolean {
 	return (
 		!result.ok &&

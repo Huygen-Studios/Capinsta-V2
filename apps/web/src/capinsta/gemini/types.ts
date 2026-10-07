@@ -8,6 +8,7 @@ export interface GeminiTimedWord {
 	rawStartUs?: number;
 	rawEndUs?: number;
 	timingQuality: TimingQuality;
+	modelEstimated?: boolean;
 	alignmentGroupId?: string;
 	speaker?: string;
 }

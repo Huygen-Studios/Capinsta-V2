@@ -3,17 +3,23 @@ import type {
 	CapinstaLanguageMode,
 	CapinstaTranscriptV1,
 } from "../types";
+import type { GoogleGenAI } from "@google/genai";
 import { extractAudioChunk, measureAudioDurationUs } from "./audio";
 import { createAudioChunks, mergeOverlappingWords } from "./chunking";
 import {
 	geminiProviderDiagnostic,
+	isGeminiTranscribeModelFailure,
 	isGeminiTranscriptionFallbackEligible,
 	safeGeminiError,
 } from "./errors";
-import { GEMINI_TRANSCRIPTION_MODEL } from "./models";
+import {
+	GEMINI_AUDIO_FALLBACK_MODEL,
+	GEMINI_TRANSCRIPTION_MODEL,
+} from "./models";
 import {
 	parseTimedAnnotations,
 	parseGenerateContentTimedAnnotations,
+	parseEstimatedFlashWords,
 	shouldRetryTiming,
 	timingFailureMessage,
 	validateTimedWords,
@@ -27,6 +33,8 @@ const LANGUAGE_HINTS: Partial<Record<CapinstaLanguageMode, string[]>> = {
 	hindi: ["hi-IN"],
 	telugu: ["te-IN"],
 };
+const FLASH_CHUNK_US = 90 * 1_000_000;
+const FLASH_OVERLAP_US = 1_000_000;
 
 export const MAX_TRANSCRIPTION_ATTEMPTS = 2;
 
@@ -114,6 +122,24 @@ export async function requestTranscriptionWithFallback<T>({
 	}
 }
 
+export async function requestFlashAfterTranscribeFailure<T>({
+	error,
+	nativeFallbackAttempted,
+	signal,
+	flash,
+}: {
+	error: unknown;
+	nativeFallbackAttempted: boolean;
+	signal: AbortSignal;
+	flash: () => Promise<T>;
+}): Promise<T> {
+	signal.throwIfAborted();
+	if (!nativeFallbackAttempted || !isGeminiTranscribeModelFailure(error)) {
+		throw error;
+	}
+	return flash();
+}
+
 export async function withGeminiFileCleanup<T>({
 	run,
 	cleanup,
@@ -133,16 +159,208 @@ export async function withGeminiFileCleanup<T>({
 function debugGeminiFailure({
 	stage,
 	error,
+	model = GEMINI_TRANSCRIPTION_MODEL,
 }: {
 	stage: string;
 	error: unknown;
+	model?: string;
 }): void {
 	if (process.env.NODE_ENV !== "development") return;
 	console.debug("[CapInsta Gemini]", {
 		stage,
-		model: GEMINI_TRANSCRIPTION_MODEL,
+		model,
 		...geminiProviderDiagnostic(error),
 	});
+}
+
+export function buildFlashTranscriptionRequest({
+	uri,
+	mimeType,
+	languageMode,
+	signal,
+}: {
+	uri: string;
+	mimeType: string;
+	languageMode: CapinstaLanguageMode;
+	signal: AbortSignal;
+}) {
+	const language = LANGUAGE_HINTS[languageMode]?.[0];
+	return {
+		model: GEMINI_AUDIO_FALLBACK_MODEL,
+		contents: [
+			{
+				role: "user" as const,
+				parts: [
+					{ fileData: { fileUri: uri, mimeType } },
+					{
+						text: `Transcribe only the words actually spoken in this audio${language ? ` (${language})` : " in their original spoken language"}. Return one item per audible word in order. Each item must contain the word as spoken and its own start and end time in decimal seconds from the start of this audio. Do not translate, combine words, fill silence, or invent timing. If you cannot identify reliable word boundaries, return an empty words array.`,
+					},
+				],
+			},
+		],
+		config: {
+			abortSignal: signal,
+			responseMimeType: "application/json",
+			responseJsonSchema: {
+				type: "object",
+				properties: {
+					words: {
+						type: "array",
+						items: {
+							type: "object",
+							properties: {
+								text: { type: "string" },
+								start: { type: "number" },
+								end: { type: "number" },
+							},
+							required: ["text", "start", "end"],
+						},
+					},
+				},
+				required: ["words"],
+			},
+			maxOutputTokens: 16_384,
+		},
+	};
+}
+
+export async function transcribeWithFlashFallback({
+	ai,
+	file,
+	durationUs,
+	readyUri,
+	readyMimeType,
+	languageMode,
+	signal,
+	onProgress,
+	onWarning,
+}: {
+	ai: GoogleGenAI;
+	file: File;
+	durationUs: number;
+	readyUri: string;
+	readyMimeType: string;
+	languageMode: CapinstaLanguageMode;
+	signal: AbortSignal;
+	onProgress: (progress: GeminiCaptionProgress) => void;
+	onWarning: (warning: string) => void;
+}): Promise<GeminiTimedWord[]> {
+	const chunks = [];
+	for (
+		let startUs = 0;
+		startUs < durationUs;
+		startUs += FLASH_CHUNK_US - FLASH_OVERLAP_US
+	) {
+		chunks.push({
+			startUs,
+			endUs: Math.min(startUs + FLASH_CHUNK_US, durationUs),
+		});
+		if (startUs + FLASH_CHUNK_US >= durationUs) break;
+	}
+	let words: GeminiTimedWord[] = [];
+	for (const [index, chunk] of chunks.entries()) {
+		signal.throwIfAborted();
+		onProgress({
+			stage: "transcribing",
+			message: `Using Gemini audio fallback… ${index + 1}/${chunks.length}`,
+		});
+		const sub =
+			chunks.length === 1
+				? { file, durationUs }
+				: await extractAudioChunk({
+						file,
+						chunk,
+						totalDurationUs: durationUs,
+						signal,
+					});
+		const run = async ({
+			uri,
+			mimeType,
+		}: {
+			uri: string;
+			mimeType: string;
+		}): Promise<GeminiTimedWord[]> => {
+			for (let attempt = 0; attempt < MAX_TRANSCRIPTION_ATTEMPTS; attempt++) {
+				signal.throwIfAborted();
+				let response;
+				try {
+					response = await ai.models.generateContent(
+						buildFlashTranscriptionRequest({
+							uri,
+							mimeType,
+							languageMode,
+							signal,
+						}),
+					);
+				} catch (error) {
+					debugGeminiFailure({
+						stage: "audio-fallback",
+						model: GEMINI_AUDIO_FALLBACK_MODEL,
+						error,
+					});
+					throw error;
+				}
+				const parsed = parseEstimatedFlashWords(response.text, sub.durationUs);
+				if (parsed.ok) {
+					parsed.warnings.forEach(onWarning);
+					return parsed.words;
+				}
+				if (attempt === 0 && shouldRetryTiming(parsed)) continue;
+				throw new Error(timingFailureMessage(parsed.reason));
+			}
+			throw new Error("Gemini did not return usable word timing.");
+		};
+		let incoming: GeminiTimedWord[];
+		if (chunks.length === 1) {
+			incoming = await run({ uri: readyUri, mimeType: readyMimeType });
+		} else {
+			const uploaded = await ai.files.upload({
+				file: sub.file,
+				config: { mimeType: sub.file.type || "audio/wav", abortSignal: signal },
+			});
+			incoming = await withGeminiFileCleanup({
+				run: async () => {
+					let ready = uploaded;
+					for (
+						let poll = 0;
+						ready.state === "PROCESSING" && poll < 120;
+						poll++
+					) {
+						await abortableDelay(1_000, signal);
+						ready = await ai.files.get({
+							name: uploaded.name!,
+							config: { abortSignal: signal },
+						});
+					}
+					if (
+						!ready.uri ||
+						ready.state === "FAILED" ||
+						ready.state === "PROCESSING"
+					) {
+						throw new Error("Google could not prepare the uploaded audio.");
+					}
+					return run({
+						uri: ready.uri,
+						mimeType: ready.mimeType || sub.file.type || "audio/wav",
+					});
+				},
+				cleanup: () =>
+					uploaded.name
+						? ai.files.delete({ name: uploaded.name })
+						: Promise.resolve(),
+				onCleanupWarning: () =>
+					onWarning(
+						"Google file cleanup failed; the temporary upload may remain until Google's retention period expires.",
+					),
+			});
+		}
+		words = mergeOverlappingWords({
+			previous: words,
+			incoming,
+			offsetUs: chunk.startUs,
+		});
+	}
+	return words;
 }
 
 export async function generateGeminiTranscript({
@@ -181,6 +399,7 @@ export async function generateGeminiTranscript({
 		const { GoogleGenAI } = await import("@google/genai");
 		const ai = new GoogleGenAI({ apiKey });
 		let words: GeminiTimedWord[] = [];
+		let usedAudioFallback = false;
 
 		for (const [chunkIndex, chunk] of chunks.entries()) {
 			const position = {
@@ -240,6 +459,7 @@ export async function generateGeminiTranscript({
 
 					let acceptedWords: GeminiTimedWord[] | null = null;
 					let useGenerateContentFallback = false;
+					let nativeFallbackAttempted = false;
 					for (
 						let attempt = 0;
 						attempt < MAX_TRANSCRIPTION_ATTEMPTS;
@@ -281,35 +501,58 @@ export async function generateGeminiTranscript({
 							}
 						};
 						let response: unknown;
-						if (useGenerateContentFallback) {
-							response = await fallback();
-						} else {
-							const result = await requestTranscriptionWithFallback<unknown>({
+						try {
+							if (useGenerateContentFallback) {
+								response = await fallback();
+							} else {
+								const result = await requestTranscriptionWithFallback<unknown>({
+									signal,
+									primary: async () => {
+										try {
+											return await ai.interactions.create(
+												buildInteractionTranscriptionRequest({
+													uri: ready.uri!,
+													mimeType,
+													languageMode,
+												}),
+												{ signal, retries: { strategy: "none" } },
+											);
+										} catch (error) {
+											debugGeminiFailure({ stage: "transcription", error });
+											throw error;
+										}
+									},
+									fallback,
+									onFallback: () => {
+										nativeFallbackAttempted = true;
+									},
+								});
+								response = result.value;
+								useGenerateContentFallback = result.usedFallback;
+							}
+						} catch (error) {
+							acceptedWords = await requestFlashAfterTranscribeFailure({
+								error,
+								nativeFallbackAttempted,
 								signal,
-								primary: async () => {
-									try {
-										return await ai.interactions.create(
-											buildInteractionTranscriptionRequest({
-												uri: ready.uri!,
-												mimeType,
-												languageMode,
-											}),
-											{ signal, retries: { strategy: "none" } },
-										);
-									} catch (error) {
-										debugGeminiFailure({ stage: "transcription", error });
-										throw error;
-									}
-								},
-								fallback,
-								onFallback: () => {
-									onWarning(
-										"Gemini Interactions rejected transcription; used Google's compatible GenerateContent transcription API with native word timestamps.",
-									);
-								},
+								flash: () =>
+									transcribeWithFlashFallback({
+										ai,
+										file: extracted.file,
+										durationUs: extracted.durationUs,
+										readyUri: ready.uri!,
+										readyMimeType: mimeType,
+										languageMode,
+										signal,
+										onProgress,
+										onWarning,
+									}),
 							});
-							response = result.value;
-							useGenerateContentFallback = result.usedFallback;
+							usedAudioFallback = true;
+							onWarning(
+								"Gemini 3.5 Transcribe is currently failing. Gemini Flash supplied estimated word timing; review captions before export.",
+							);
+							break;
 						}
 						onProgress({
 							stage: "validating",
@@ -324,6 +567,11 @@ export async function generateGeminiTranscript({
 							: parseTimedAnnotations(response, extracted.durationUs);
 						if (parsed.ok) {
 							parsed.warnings.forEach(onWarning);
+							if (useGenerateContentFallback) {
+								onWarning(
+									"Gemini Interactions rejected transcription; Google's GenerateContent transcription API supplied native word timestamps.",
+								);
+							}
 							acceptedWords = parsed.words;
 							break;
 						}
@@ -385,6 +633,7 @@ export async function generateGeminiTranscript({
 			audioDurationUs,
 			timelineOffsetUs,
 			audioOrigin,
+			usedAudioFallback,
 		});
 	} catch (error) {
 		throw safeGeminiError(error);

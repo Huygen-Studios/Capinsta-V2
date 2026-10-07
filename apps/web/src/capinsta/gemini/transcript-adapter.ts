@@ -4,7 +4,10 @@ import type {
 	CapinstaTranscriptV1,
 } from "../types";
 import type { GeminiTimedWord } from "./types";
-import { GEMINI_TRANSCRIPTION_MODEL } from "./models";
+import {
+	GEMINI_AUDIO_FALLBACK_MODEL,
+	GEMINI_TRANSCRIPTION_MODEL,
+} from "./models";
 
 export function geminiWordsToCapinstaTranscript({
 	words,
@@ -15,6 +18,7 @@ export function geminiWordsToCapinstaTranscript({
 	audioDurationUs,
 	timelineOffsetUs,
 	audioOrigin,
+	usedAudioFallback = false,
 }: {
 	words: GeminiTimedWord[];
 	sourceAsset: { assetId: string; assetName: string; mimeType?: string };
@@ -24,6 +28,7 @@ export function geminiWordsToCapinstaTranscript({
 	audioDurationUs: number;
 	timelineOffsetUs: number;
 	audioOrigin: "rendered_timeline" | "rendered_selection" | "source_media";
+	usedAudioFallback?: boolean;
 }): CapinstaTranscriptV1 {
 	const generatedAt = new Date().toISOString();
 	const transformation =
@@ -46,7 +51,12 @@ export function geminiWordsToCapinstaTranscript({
 		transformation,
 		provider: {
 			name: "gemini",
-			model: GEMINI_TRANSCRIPTION_MODEL,
+			model: usedAudioFallback
+				? `${GEMINI_TRANSCRIPTION_MODEL}, ${GEMINI_AUDIO_FALLBACK_MODEL}`
+				: GEMINI_TRANSCRIPTION_MODEL,
+			...(usedAudioFallback
+				? { fallback: true, fallbackFrom: GEMINI_TRANSCRIPTION_MODEL }
+				: {}),
 		},
 		clips: [],
 		words: words.map((word) => ({
@@ -55,16 +65,28 @@ export function geminiWordsToCapinstaTranscript({
 			displayedText: word.text,
 			start: word.startUs / 1_000_000,
 			end: word.endUs / 1_000_000,
-			timingSource:
-				word.timingQuality === "native" ? "provider" : "repaired_provider",
+			timingSource: word.modelEstimated
+				? "estimated"
+				: word.timingQuality === "native"
+					? "provider"
+					: "repaired_provider",
 			provider: "gemini",
-			timingSourceDetail: `gemini_${word.timingQuality}_word_timestamp`,
-			...(word.timingQuality === "native"
-				? {}
-				: {
-						timingRepair: word.timingQuality,
-						timingWarning: "Gemini returned a shared or zero-duration annotation; timing was deterministically repaired.",
-					}),
+			timingSourceDetail: word.modelEstimated
+				? `gemini_flash_estimated_${word.timingQuality}_word_timestamp`
+				: `gemini_${word.timingQuality}_word_timestamp`,
+			...(word.modelEstimated
+				? {
+						timingNeedsReview: true,
+						timingWarning:
+							"Gemini Flash estimated this word timing during a transcription model outage. Review timing before export.",
+					}
+				: word.timingQuality === "native"
+					? {}
+					: {
+							timingRepair: word.timingQuality,
+							timingWarning:
+								"Gemini returned a shared or zero-duration annotation; timing was deterministically repaired.",
+						}),
 		})),
 		stylePreset: {
 			id: "word_highlight_box",
@@ -80,9 +102,16 @@ export function geminiWordsToCapinstaTranscript({
 			timelineOffsetUs,
 			audioOrigin,
 			report: {
-				nativeWordCount: words.filter((word) => word.timingQuality === "native").length,
-				repairedWordCount: words.filter((word) => word.timingQuality === "repaired").length,
-				sharedWordCount: words.filter((word) => word.timingQuality === "shared").length,
+				nativeWordCount: words.filter(
+					(word) => !word.modelEstimated && word.timingQuality === "native",
+				).length,
+				repairedWordCount: words.filter(
+					(word) => !word.modelEstimated && word.timingQuality === "repaired",
+				).length,
+				sharedWordCount: words.filter(
+					(word) => !word.modelEstimated && word.timingQuality === "shared",
+				).length,
+				estimatedWordCount: words.filter((word) => word.modelEstimated).length,
 			},
 		},
 	};

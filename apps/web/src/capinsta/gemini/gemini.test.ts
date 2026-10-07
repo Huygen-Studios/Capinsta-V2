@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { GoogleGenAI } from "@google/genai";
 /* eslint-disable opencut/prefer-object-params -- Storage test double must implement the platform's positional interface. */
+/* eslint-disable @typescript-eslint/no-unsafe-type-assertion -- SDK test double only implements the called method. */
 import { createAudioChunks, mergeOverlappingWords } from "./chunking";
 import {
 	geminiProviderDiagnostic,
 	isGeminiServiceUnavailable,
+	isGeminiTranscribeModelFailure,
 	isGeminiTranscriptionFallbackEligible,
 	redactGeminiSecrets,
 	safeGeminiError,
@@ -17,6 +20,7 @@ import {
 import { geminiWordsToCapinstaTranscript } from "./transcript-adapter";
 import {
 	parseGeminiOffsetUs,
+	parseEstimatedFlashWords,
 	parseGenerateContentTimedAnnotations,
 	parseTimedAnnotations,
 	validateTimedWords,
@@ -24,10 +28,13 @@ import {
 import type { GeminiTimedWord } from "./types";
 import {
 	abortableDelay,
+	buildFlashTranscriptionRequest,
 	buildGenerateContentTranscriptionRequest,
 	buildInteractionTranscriptionRequest,
 	MAX_TRANSCRIPTION_ATTEMPTS,
+	requestFlashAfterTranscribeFailure,
 	requestTranscriptionWithFallback,
+	transcribeWithFlashFallback,
 	withGeminiFileCleanup,
 } from "./transcription";
 import {
@@ -374,6 +381,174 @@ test("provider diagnostics redact credentials in messages and query strings", ()
 	const serialized = JSON.stringify(diagnostic);
 	expect(serialized).not.toContain(secret);
 	expect(redactGeminiSecrets(`?key=${secret}`)).not.toContain(secret);
+	const authorizationKey = `AQ.${"x".repeat(48)}`;
+	expect(redactGeminiSecrets(`Bearer ${authorizationKey}`)).not.toContain(
+		authorizationKey,
+	);
+});
+
+test("Flash fallback is reserved for the observed Transcribe model failure", () => {
+	expect(
+		isGeminiTranscribeModelFailure({
+			status: 400,
+			message: "Thinking is not enabled for this model",
+		}),
+	).toBe(true);
+	for (const error of [
+		{ status: 400, code: "API_KEY_INVALID", message: "Invalid key" },
+		{ status: 400, code: "INVALID_ARGUMENT", message: "Bad audio format" },
+		{ status: 403, message: "Thinking is not enabled for this model" },
+		new DOMException("Cancelled", "AbortError"),
+	]) {
+		expect(isGeminiTranscribeModelFailure(error)).toBe(false);
+	}
+});
+
+test("a second Transcribe thinking failure reaches Flash, while unrelated errors do not", async () => {
+	const thinkingFailure = {
+		status: 400,
+		code: "INVALID_ARGUMENT",
+		message: "Thinking is not enabled for this model",
+	};
+	let flashCalls = 0;
+	let nativeFallbackAttempted = false;
+	const flash = () => {
+		flashCalls++;
+		return Promise.resolve("timed words");
+	};
+	const result = await requestTranscriptionWithFallback({
+		signal: new AbortController().signal,
+		primary: () => Promise.reject(thinkingFailure),
+		fallback: () => Promise.reject(thinkingFailure),
+		onFallback: () => {
+			nativeFallbackAttempted = true;
+		},
+	}).catch((error: unknown) =>
+		requestFlashAfterTranscribeFailure({
+			error,
+			nativeFallbackAttempted,
+			signal: new AbortController().signal,
+			flash,
+		}),
+	);
+	expect(result).toBe("timed words");
+	for (const error of [
+		{ status: 401 },
+		{ status: 403 },
+		{ status: 429 },
+		{ status: 400, message: "Bad audio format" },
+	]) {
+		await expect(
+			requestFlashAfterTranscribeFailure({
+				error,
+				nativeFallbackAttempted: true,
+				signal: new AbortController().signal,
+				flash,
+			}),
+		).rejects.toBe(error);
+	}
+	await expect(
+		requestFlashAfterTranscribeFailure({
+			error: thinkingFailure,
+			nativeFallbackAttempted: false,
+			signal: new AbortController().signal,
+			flash,
+		}),
+	).rejects.toBe(thinkingFailure);
+	expect(flashCalls).toBe(1);
+});
+
+test("Flash audio request asks for structured original-language word timing", () => {
+	const request = buildFlashTranscriptionRequest({
+		uri: "https://files.test/audio",
+		mimeType: "audio/wav",
+		languageMode: "auto",
+		signal: new AbortController().signal,
+	});
+	expect(request.model).toBe("gemini-3.5-flash");
+	expect(request.config.responseMimeType).toBe("application/json");
+	expect(request.contents[0]?.parts[0]).toEqual({
+		fileData: { fileUri: "https://files.test/audio", mimeType: "audio/wav" },
+	});
+	expect(request.contents[0]?.parts[1]).toHaveProperty(
+		"text",
+		expect.stringContaining("original spoken language"),
+	);
+});
+
+test("Flash words require real in-range timings and are marked estimated", () => {
+	const valid = parseEstimatedFlashWords(
+		JSON.stringify({
+			words: [
+				{ text: "Hello", start: 0.1, end: 0.4 },
+				{ text: "world", start: 0.5, end: 0.8 },
+			],
+		}),
+		1_000_000,
+	);
+	expect(valid.ok).toBe(true);
+	if (!valid.ok) return;
+	expect(valid.words.every((word) => word.modelEstimated)).toBe(true);
+	const transcript = geminiWordsToCapinstaTranscript({
+		words: valid.words,
+		sourceAsset: { assetId: "asset", assetName: "audio.wav" },
+		languageMode: "auto",
+		outputLanguage: "original",
+		durationUs: 1_000_000,
+		audioDurationUs: 1_000_000,
+		timelineOffsetUs: 0,
+		audioOrigin: "source_media",
+		usedAudioFallback: true,
+	});
+	expect(transcript.provider.fallback).toBe(true);
+	expect(
+		transcript.words.every(
+			(word) => word.timingSource === "estimated" && word.timingNeedsReview,
+		),
+	).toBe(true);
+	expect(transcript.timing.report?.estimatedWordCount).toBe(2);
+	expect(
+		parseEstimatedFlashWords(
+			JSON.stringify({ words: [{ text: "late", start: 2, end: 3 }] }),
+			1_000_000,
+		).ok,
+	).toBe(false);
+	expect(
+		parseEstimatedFlashWords(
+			JSON.stringify({ words: [{ text: "no time" }] }),
+			1_000_000,
+		).ok,
+	).toBe(false);
+});
+
+test("short-audio Flash fallback calls Gemini and keeps only validated words", async () => {
+	let requests = 0;
+	const ai = {
+		models: {
+			generateContent: async () => {
+				requests++;
+				return {
+					text: JSON.stringify({
+						words: [{ text: "Hello", start: 0.1, end: 0.4 }],
+					}),
+				};
+			},
+		},
+	} as unknown as GoogleGenAI;
+	const words = await transcribeWithFlashFallback({
+		ai,
+		file: new File([new Uint8Array(1)], "audio.wav", { type: "audio/wav" }),
+		durationUs: 1_000_000,
+		readyUri: "https://files.test/audio",
+		readyMimeType: "audio/wav",
+		languageMode: "auto",
+		signal: new AbortController().signal,
+		onProgress: () => {},
+		onWarning: () => {},
+	});
+	expect(requests).toBe(1);
+	expect(words).toHaveLength(1);
+	expect(words[0]?.modelEstimated).toBe(true);
 });
 
 test("Auto Detect and English build documented native timestamp requests", () => {

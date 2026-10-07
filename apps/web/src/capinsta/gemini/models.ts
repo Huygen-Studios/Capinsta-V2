@@ -1,4 +1,5 @@
 export const GEMINI_TRANSCRIPTION_MODEL = "gemini-3.5-transcribe";
+export const GEMINI_AUDIO_FALLBACK_MODEL = "gemini-3.5-flash";
 export const GEMINI_TRANSLATION_MODEL = "gemini-3.5-flash-lite";
 export const GEMINI_TRANSLATION_FALLBACK_MODEL = "gemini-3.5-flash";
 

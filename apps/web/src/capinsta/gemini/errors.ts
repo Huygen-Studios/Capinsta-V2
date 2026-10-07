@@ -1,5 +1,6 @@
 const SECRET_PATTERNS = [
 	/AIza[\w-]{20,}/g,
+	/AQ\.[\w-]{20,}/g,
 	/(?:key|api[_ -]?key)([=:]\s*)[^&\s"']+/gi,
 	/(authorization\s*[:=]\s*)(?:bearer\s+)?[^&\s"']+/gi,
 	/(x-goog-api-key\s*[:=]\s*)[^&\s"']+/gi,
@@ -124,6 +125,13 @@ export function isGeminiTranscriptionFallbackEligible(error: unknown): boolean {
 	return (
 		status === 400 &&
 		(code === "INVALID_ARGUMENT" || /thinking is not enabled/i.test(message))
+	);
+}
+
+export function isGeminiTranscribeModelFailure(error: unknown): boolean {
+	const { status, message } = geminiProviderDiagnostic(error);
+	return (
+		status === 400 && /thinking is not enabled for this model/i.test(message)
 	);
 }
 
