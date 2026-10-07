@@ -57,8 +57,11 @@ export function safeGeminiError(error: unknown): Error {
 	if (status === 429 || /quota|rate limit|billing/i.test(raw)) {
 		return new Error("Google Gemini quota or rate limit reached. Check API billing or retry later.");
 	}
+	if (/api key not valid|api_key_invalid/i.test(raw)) {
+		return new Error("This Gemini API key is invalid. Create a new authorization key in Google AI Studio, then replace it here.");
+	}
 	if ([400, 401, 403].includes(status) || /api.?key|permission/i.test(raw)) {
-		return new Error("Google rejected this request. Replace the Gemini API key or check its restrictions, billing, and model access.");
+		return new Error("Google rejected this Gemini key. Create a new authorization key in Google AI Studio, or restrict an older standard key to the Gemini API only, then replace it here.");
 	}
 	if (status === 404) {
 		return new Error("The required Gemini model is not available to this API key.");

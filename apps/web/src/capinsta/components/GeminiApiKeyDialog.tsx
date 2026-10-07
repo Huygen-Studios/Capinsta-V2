@@ -58,6 +58,10 @@ export function GeminiApiKeyDialog({
 					</DialogDescription>
 				</DialogHeader>
 				<DialogBody>
+					<p className="text-muted-foreground text-sm">
+						Use an authorization key created in Google AI Studio. Older
+						unrestricted standard keys may be rejected by Google.
+					</p>
 					{hasKey ? (
 						<p className="text-muted-foreground text-sm">
 							A key is saved. Paste a new key below to replace it.
@@ -97,7 +101,7 @@ export function GeminiApiKeyDialog({
 						rel="noreferrer"
 						className="text-primary text-sm underline underline-offset-4"
 					>
-						Get a Gemini API key
+						Create a compatible Gemini authorization key
 					</a>
 					{error ? <p className="text-destructive text-sm">{error}</p> : null}
 				</DialogBody>

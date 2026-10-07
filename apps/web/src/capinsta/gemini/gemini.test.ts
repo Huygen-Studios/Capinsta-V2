@@ -275,6 +275,12 @@ test("safe provider errors redact keys while retaining timing guidance", () => {
 	).toBe("Gemini returned missing word timestamps.");
 	expect(safeGeminiError(new Error("api_key=AIzaabcdefghijklmnopqrstuvwxyz123")).message).not.toContain("AIza");
 	expect(safeGeminiError({ status: 403, message: "Forbidden" }).message).toContain(
-		"Replace the Gemini API key",
+		"authorization key",
+	);
+	expect(
+		safeGeminiError({ status: 400, message: "API key not valid. API_KEY_INVALID" })
+			.message,
+	).toBe(
+		"This Gemini API key is invalid. Create a new authorization key in Google AI Studio, then replace it here.",
 	);
 });

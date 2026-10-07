@@ -793,6 +793,14 @@ export function Captions() {
 							>
 								Change Gemini API key
 							</Button>
+							<a
+								href="https://aistudio.google.com/app/apikey"
+								target="_blank"
+								rel="noreferrer"
+								className="text-primary text-sm underline underline-offset-4"
+							>
+								Create a new Gemini authorization key
+							</a>
 						</div>
 					)}
 					{allWarnings.length > 0 && (
