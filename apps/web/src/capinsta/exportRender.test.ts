@@ -388,6 +388,40 @@ describe("Capinsta export render helpers", () => {
 		}
 	});
 
+	test("keeps centered word positions stable while later words reveal", () => {
+		const document = capinstaTranscriptToCaptionDocument({
+			...sampleCapinstaTranscriptV1,
+			stylePreset: {
+				...sampleCapinstaTranscriptV1.stylePreset,
+				id: "kinetic_fade",
+				name: "Kinetic Fade",
+			},
+		});
+		const renderData = getCapinstaTextRenderDataForElement({
+			records: [recordForDocument(document)],
+			element: elementForClip({ document }),
+			canvasSize: { width: 1080, height: 1920 },
+		});
+		if (!renderData || renderData.words.length < 2) throw new Error("missing word render data");
+
+		const firstFrame = renderCapinstaWysiwygExportCaption({
+			ctx: createTestCanvasContext(),
+			renderData,
+			activeWordIds: [renderData.words[0]!.id],
+			timeSeconds: renderData.words[0]!.start,
+			canvasSize: { width: 1080, height: 1920 },
+		});
+		const laterFrame = renderCapinstaWysiwygExportCaption({
+			ctx: createTestCanvasContext(),
+			renderData,
+			activeWordIds: [renderData.words.at(-1)!.id],
+			timeSeconds: renderData.words.at(-1)!.start,
+			canvasSize: { width: 1080, height: 1920 },
+		});
+
+		expect(laterFrame.debug.box).toEqual(firstFrame.debug.box);
+	});
+
 	test("exports OpenCut-safe font units instead of raw Capinsta preset sizes", () => {
 		const document = capinstaTranscriptToCaptionDocument(sampleCapinstaTranscriptV1);
 		const renderData = getCapinstaTextRenderDataForElement({

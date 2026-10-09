@@ -274,11 +274,9 @@ function drawInlinePresetCaption({
 	const maxWidth = (canvasSize.width * layout.widthPercent) / 100;
 	const centerX = (layout.xPercent / 100) * canvasSize.width;
 	const centerY = (layout.yPercent / 100) * canvasSize.height;
-	const words =
-		strategy === "apple_cinematic" || strategy === "kinetic_fade"
-			? allWords.filter((word) => timeSeconds >= word.start)
-			: allWords;
-	const safeWords = words.length ? words : allWords.slice(0, 1);
+	// Keep every word in layout from the first frame so centered captions never
+	// shift sideways as later words reveal; motion.opacity controls visibility.
+	const words = allWords;
 	const lineHeight = fontSize * config.lineHeight;
 	const rowGap = fontSize * 0.08;
 	const captionStart = Math.min(...allWords.map((word) => word.start));
@@ -290,7 +288,7 @@ function drawInlinePresetCaption({
 	ctx.textBaseline = "middle";
 	setShadowFromConfig({ ctx, config, scale });
 
-	const lines = buildLines({ ctx, words: safeWords, config, maxWidth, fontSize });
+	const lines = buildLines({ ctx, words, config, maxWidth, fontSize });
 	const lineWidths = lines.map((line) => measureLine({ ctx, line, fontSize }));
 	const contentWidth = Math.max(1, ...lineWidths);
 	const contentHeight =

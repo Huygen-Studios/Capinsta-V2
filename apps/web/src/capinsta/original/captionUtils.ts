@@ -271,6 +271,14 @@ function getCaptionPageDuration(words: AlignedWord[]) {
   return Math.max(0, words[words.length - 1].end - words[0].start);
 }
 
+function endsCaptionPhrase(word: string) {
+  const text = word.trim();
+  if (!/[.,!?;:]$/.test(text)) return false;
+  if (/^[a-z]\.$/i.test(text)) return false;
+  if (/^(?:dr|mr|mrs|ms|prof|sr|jr)\.$/i.test(text)) return false;
+  return true;
+}
+
 function canMergeCaptionPages(left: AlignedWord[], right: AlignedWord[], options: CaptionChunkingConfig) {
   if (left.length === 0 || right.length === 0) return false;
 
@@ -482,7 +490,7 @@ export function buildCaptionPages(
 
     const splitForPause = pauseSeconds >= pauseSplitThreshold || pauseSeconds > internalGapThreshold;
     const lastWordText = getWordDisplayText(lastWord).trim();
-    const splitForPunctuation = /[.,!?;:]$/.test(lastWordText);
+    const splitForPunctuation = endsCaptionPhrase(lastWordText);
     const splitForOverflow = candidateText.length > maxChars;
     const firstWordText = getWordDisplayText(current[0]).trim();
     const targetForCurrentPhrase =

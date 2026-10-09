@@ -1066,7 +1066,7 @@ export function CapinstaCaptionStylePanel(
 					onChange={(maxWordsPerCaption) =>
 						updateChunkingConfig({
 							maxWordsPerCaption,
-							targetWordsPerCaption: Math.max(1, maxWordsPerCaption - 1),
+							targetWordsPerCaption: maxWordsPerCaption,
 						})
 					}
 				/>

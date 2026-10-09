@@ -16,6 +16,37 @@ const words: AlignedWord[] = [
 ];
 
 describe("pause-aware caption timing", () => {
+	test("keeps honorifics and initials with a full name up to the selected word limit", () => {
+		const nameWords = "Dr. K Sudheer Reddy, Dr. Y. Dharmendar Reddy,"
+			.split(" ")
+			.map((word, index) => ({
+				word,
+				displayedWord: word,
+				start: index * 0.2,
+				end: index * 0.2 + 0.18,
+			}));
+		const options = {
+			...DEFAULT_CAPTION_CHUNKING_CONFIG,
+			targetWordsPerCaption: 4,
+			maxWordsPerCaption: 4,
+			maxCaptionDuration: 10,
+		};
+
+		expect(
+			buildCaptionPages(nameWords, options).map((page) =>
+				page.map((word) => word.word).join(" "),
+			),
+		).toEqual(["Dr. K Sudheer Reddy,", "Dr. Y. Dharmendar Reddy,"]);
+
+		expect(
+			buildCaptionPages(nameWords.slice(0, 4), {
+				...options,
+				targetWordsPerCaption: 2,
+				maxWordsPerCaption: 2,
+			}).map((page) => page.map((word) => word.word).join(" ")),
+		).toEqual(["Dr. K", "Sudheer Reddy,"]);
+	});
+
 	test("alignedWordsToCaptions preserves the preset hold while splitting at a speaker pause", () => {
 		const captions = alignedWordsToCaptions(words, "english", "word_highlight_box", {
 			...DEFAULT_CAPTION_CHUNKING_CONFIG,
