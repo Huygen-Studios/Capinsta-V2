@@ -6,10 +6,25 @@ use crate::{
 };
 
 fn strong_punctuation(text: &str) -> bool {
-    text.trim_end()
-        .chars()
-        .last()
-        .is_some_and(|character| matches!(character, '.' | '!' | '?' | ',' | ';' | ':' | '।' | '॥'))
+    let text = text.trim_end();
+    let Some(character) = text.chars().last() else {
+        return false;
+    };
+    if !matches!(character, '.' | '!' | '?' | ',' | ';' | ':' | '।' | '॥') {
+        return false;
+    }
+    if let Some(stem) = text.strip_suffix('.') {
+        if stem.chars().count() == 1 && stem.chars().all(char::is_alphabetic) {
+            return false;
+        }
+        if matches!(
+            stem.to_ascii_lowercase().as_str(),
+            "dr" | "mr" | "mrs" | "ms" | "prof" | "sr" | "jr"
+        ) {
+            return false;
+        }
+    }
+    true
 }
 
 fn adaptive_pause_threshold(words: &[TimedWord], config: &CaptionTimingConfig) -> i64 {
@@ -234,6 +249,53 @@ mod tests {
                 .map(|page| page.word_ids.len())
                 .collect::<Vec<_>>(),
             vec![3, 3, 3]
+        );
+    }
+
+    #[test]
+    fn keeps_honorifics_and_initials_with_names_up_to_the_word_limit() {
+        let names = [
+            "Dr.",
+            "K.",
+            "Sudheer",
+            "Reddy,",
+            "Dr.",
+            "Y.",
+            "Dharmendar",
+            "Reddy,",
+        ];
+        let input = names
+            .iter()
+            .enumerate()
+            .map(|(index, text)| TimedWord {
+                id: format!("w{index}"),
+                spoken_text: (*text).to_owned(),
+                display_text: (*text).to_owned(),
+                start_us: index as i64 * 200_000,
+                end_us: index as i64 * 200_000 + 180_000,
+                confidence: Some(0.9),
+                timing_source: TimingSource::Provider,
+                timing_needs_review: false,
+                provider: None,
+                speaker_id: None,
+                language: None,
+                vad_segment_id: None,
+                timing_diagnostic: None,
+            })
+            .collect();
+        let mut document = doc(input, 2_000_000);
+        let mut config = CaptionTimingConfig::default();
+        config.max_words_per_page = 4;
+
+        build_caption_pages(&mut document, &config);
+
+        assert_eq!(
+            document
+                .pages
+                .iter()
+                .map(|page| page.word_ids.len())
+                .collect::<Vec<_>>(),
+            vec![4, 4]
         );
     }
 
