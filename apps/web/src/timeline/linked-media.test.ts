@@ -208,6 +208,17 @@ describe("linked media timeline helpers", () => {
 		]);
 	});
 
+	test("resizes only the explicitly selected Capinsta caption", () => {
+		const members = buildResizeMembers({
+			tracks: makeTracksWithCapinstaCaptions(),
+			selectedElements: [
+				{ trackId: "caption-track", elementId: "caption-2" },
+			],
+		});
+
+		expect(members.map((member) => member.elementId)).toEqual(["caption-2"]);
+	});
+
 	test("expands a selected Capinsta caption ref to include sibling caption clips", () => {
 		const refs = expandElementRefsWithLinkedMedia({
 			tracks: makeTracksWithCapinstaCaptions(),

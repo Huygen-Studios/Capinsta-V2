@@ -14,6 +14,48 @@ world!
 नमस्ते दुनिया`;
 
 describe("imported subtitle caption documents", () => {
+	test("merges title and initial cues from real-world SRT name lists", () => {
+		const parsed = parseSrt({
+			input: `12
+00:00:17,300 --> 00:00:17,600
+Dr.
+
+13
+00:00:17,600 --> 00:00:17,800
+K.
+
+14
+00:00:17,800 --> 00:00:18,700
+Sudhir Reddy,
+
+15
+00:00:18,700 --> 00:00:19,100
+Dr.
+
+16
+00:00:19,100 --> 00:00:19,300
+Y.
+
+17
+00:00:19,300 --> 00:00:20,300
+Dharmendra Reddy,`,
+		});
+		const document = importedSubtitleCuesToCaptionDocument({
+			captions: parsed.captions,
+			sourceName: "subtitles.srt",
+			documentId: "capinsta-doc-name-list",
+		});
+
+		expect(document.clips.map((clip) => clip.text)).toEqual([
+			"Dr. K. Sudhir Reddy,",
+			"Dr. Y. Dharmendra Reddy,",
+		]);
+		expect(document.clips.map((clip) => [clip.start, clip.end])).toEqual([
+			[17.3, 18.7],
+			[18.7, 20.3],
+		]);
+	});
+
 	test("preserves SRT cue timing, multiline text, Unicode, and clip associations", () => {
 		const parsed = parseSrt({ input: SRT });
 		const document = importedSubtitleCuesToCaptionDocument({

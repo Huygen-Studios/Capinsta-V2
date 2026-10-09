@@ -2,7 +2,7 @@ import { Command, type CommandResult } from "@/commands/base-command";
 import type { SceneTracks } from "@/timeline";
 import { EditorCore } from "@/core";
 import type { TimelineTrack } from "@/timeline";
-import type { CapinstaCaptionDocumentRecord } from "@/capinsta/types";
+import { removeDeletedCapinstaCaptions } from "@/capinsta/captionDeletion";
 
 function removeTrackElements<TTrack extends TimelineTrack>({
 	track,
@@ -20,26 +20,6 @@ function removeTrackElements<TTrack extends TimelineTrack>({
 	);
 
 	return { ...track, elements: nextElements } as TTrack;
-}
-
-function removeOrphanedCapinstaDocs({
-	records,
-	deletedElementIds,
-	afterTracks,
-}: {
-	records: CapinstaCaptionDocumentRecord[];
-	deletedElementIds: Set<string>;
-	afterTracks: SceneTracks;
-}): CapinstaCaptionDocumentRecord[] {
-	if (records.length === 0) return records;
-
-	return records.filter((record) => {
-		const trackId = record.openCutTrackId;
-		const track = afterTracks.overlay.find((t) => t.id === trackId);
-		if (!track) return false;
-		// Keep the record if at least one carrier element still exists
-		return track.elements.length > 0;
-	});
 }
 
 export class DeleteElementsCommand extends Command {
@@ -79,9 +59,10 @@ export class DeleteElementsCommand extends Command {
 			this.elements.map((e) => e.elementId),
 		);
 
-		const nextCapinstaDocs = removeOrphanedCapinstaDocs({
+		const nextCapinstaDocs = removeDeletedCapinstaCaptions({
 			records: this.savedCapinstaDocs,
 			deletedElementIds,
+			beforeTracks: this.savedTracks,
 			afterTracks: updatedTracks,
 		});
 

@@ -44,7 +44,10 @@ import {
 } from "@/capinsta/captionJobState";
 import { capinstaTranscriptToOpenCutSubtitleImport } from "@/capinsta/opencutClassicAdapter";
 import { buildCapinstaCaptionTimingDiagnostics } from "@/capinsta/adapter";
-import { importedSubtitleCuesToCaptionDocument } from "@/capinsta/importedCaptionDocument";
+import {
+	importedSubtitleCuesToCaptionDocument,
+	normalizeImportedSubtitleCues,
+} from "@/capinsta/importedCaptionDocument";
 import { generateGeminiTranscript } from "@/capinsta/gemini/transcription";
 import { readGeminiKey } from "@/capinsta/gemini/key-storage";
 import { readSarvamKey } from "@/capinsta/sarvam/key-storage";
@@ -441,15 +444,16 @@ export function Captions() {
 			});
 
 			const importedAt = new Date().toISOString();
+			const normalizedCaptions = normalizeImportedSubtitleCues(result.captions);
 			const document = importedSubtitleCuesToCaptionDocument({
-				captions: result.captions,
+				captions: normalizedCaptions,
 				sourceName: file.name,
 				importedAt,
 			});
 			if (
 				!insertCaptionDocumentAsTextTrack({
 					editor,
-					captions: result.captions,
+					captions: normalizedCaptions,
 					document,
 					importedAt,
 				})

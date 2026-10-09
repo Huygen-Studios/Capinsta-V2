@@ -9,6 +9,45 @@ import { generateUUID } from "@/utils/id";
 
 const IMPORTED_CAPTION_PRESET_ID = "word_highlight_box";
 const TOKEN_PATTERN = /\S+/gu;
+const NAME_TITLE_PATTERN = /^(?:dr|mr|mrs|ms|prof)\.$/iu;
+const NAME_INITIAL_PATTERN = /^\p{L}\.$/u;
+
+export function normalizeImportedSubtitleCues(captions: SubtitleCue[]): SubtitleCue[] {
+	const merged: SubtitleCue[] = [];
+	for (let index = 0; index < captions.length; index += 1) {
+		const cue = captions[index]!;
+		if (!NAME_TITLE_PATTERN.test(cue.text.trim())) {
+			merged.push(cue);
+			continue;
+		}
+
+		const parts = [cue];
+		let end = cue.startTime + cue.duration;
+		while (parts.length < 3) {
+			const next = captions[index + parts.length];
+			if (!next || next.startTime - end > 0.15) break;
+			parts.push(next);
+			end = next.startTime + next.duration;
+			const nextText = next.text.trim();
+			if (
+				/[,;!?]$/u.test(nextText) ||
+				(nextText.endsWith(".") && !NAME_INITIAL_PATTERN.test(nextText))
+			) break;
+		}
+		if (parts.length < 2) {
+			merged.push(cue);
+			continue;
+		}
+
+		merged.push({
+			...cue,
+			text: parts.map((part) => part.text.trim()).join(" "),
+			duration: end - cue.startTime,
+		});
+		index += parts.length - 1;
+	}
+	return merged;
+}
 
 function tokenWeight(token: string): number {
 	return Math.max(1, Array.from(token).length);
@@ -82,10 +121,11 @@ export function importedSubtitleCuesToCaptionDocument({
 		throw new Error("Cannot create a caption document without cues.");
 	}
 
+	const normalizedCaptions = normalizeImportedSubtitleCues(captions);
 	const trackId = `capinsta-caption-track-${documentId}`;
 	const style = getCapinstaPresetStyle(IMPORTED_CAPTION_PRESET_ID);
 	const words: NeutralCaptionWord[] = [];
-	const clips: NeutralCaptionClip[] = captions.map((cue, cueIndex) => {
+	const clips: NeutralCaptionClip[] = normalizedCaptions.map((cue, cueIndex) => {
 		const cueWords = estimatedWordsForCue({ cue, cueIndex, documentId });
 		words.push(...cueWords);
 		const id = `${documentId}-cue-${cueIndex + 1}`;

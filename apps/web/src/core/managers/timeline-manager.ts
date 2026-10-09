@@ -200,6 +200,7 @@ export class TimelineManager {
 			? expandElementRefsWithLinkedMedia({
 					tracks: activeScene.tracks,
 					elementRefs: elements,
+					includeCapinstaDocuments: false,
 				})
 			: elements;
 		const command = new SplitElementsCommand({

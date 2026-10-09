@@ -80,6 +80,7 @@ export function buildResizeMembers({
 	const expandedElements = expandElementRefsWithLinkedMedia({
 		tracks,
 		elementRefs: selectedElements,
+		includeCapinstaDocuments: false,
 	});
 	const selectedElementIds = new Set(
 		expandedElements.map((el) => el.elementId),
