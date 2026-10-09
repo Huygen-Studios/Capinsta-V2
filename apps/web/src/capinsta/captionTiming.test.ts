@@ -47,6 +47,26 @@ describe("pause-aware caption timing", () => {
 		).toEqual(["Dr. K", "Sudheer Reddy,"]);
 	});
 
+	test("does not let a period force a one- or two-word subtitle", () => {
+		const shortSentence = ["One", "thing.", "continues", "here"].map(
+			(word, index) => ({
+				word,
+				displayedWord: word,
+				start: index * 0.2,
+				end: index * 0.2 + 0.18,
+			}),
+		);
+
+		expect(
+			buildCaptionPages(shortSentence, {
+				...DEFAULT_CAPTION_CHUNKING_CONFIG,
+				targetWordsPerCaption: 4,
+				maxWordsPerCaption: 4,
+				maxCaptionDuration: 10,
+			}).map((page) => page.map((word) => word.word).join(" ")),
+		).toEqual(["One thing. continues here"]);
+	});
+
 	test("alignedWordsToCaptions preserves the preset hold while splitting at a speaker pause", () => {
 		const captions = alignedWordsToCaptions(words, "english", "word_highlight_box", {
 			...DEFAULT_CAPTION_CHUNKING_CONFIG,

@@ -6,25 +6,10 @@ use crate::{
 };
 
 fn strong_punctuation(text: &str) -> bool {
-    let text = text.trim_end();
-    let Some(character) = text.chars().last() else {
-        return false;
-    };
-    if !matches!(character, '.' | '!' | '?' | ',' | ';' | ':' | '।' | '॥') {
-        return false;
-    }
-    if let Some(stem) = text.strip_suffix('.') {
-        if stem.chars().count() == 1 && stem.chars().all(char::is_alphabetic) {
-            return false;
-        }
-        if matches!(
-            stem.to_ascii_lowercase().as_str(),
-            "dr" | "mr" | "mrs" | "ms" | "prof" | "sr" | "jr"
-        ) {
-            return false;
-        }
-    }
-    true
+    text.trim_end()
+        .chars()
+        .last()
+        .is_some_and(|character| matches!(character, '!' | '?' | ',' | ';' | ':' | '।' | '॥'))
 }
 
 fn adaptive_pause_threshold(words: &[TimedWord], config: &CaptionTimingConfig) -> i64 {
@@ -297,6 +282,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![4, 4]
         );
+    }
+
+    #[test]
+    fn a_period_after_a_short_phrase_does_not_force_an_early_page() {
+        let mut input = words(4, 10_000);
+        input[0].display_text = "One".to_owned();
+        input[1].display_text = "thing.".to_owned();
+        input[2].display_text = "continues".to_owned();
+        input[3].display_text = "here".to_owned();
+        let mut document = doc(input, 2_000_000);
+        let mut config = CaptionTimingConfig::default();
+        config.max_words_per_page = 4;
+
+        build_caption_pages(&mut document, &config);
+
+        assert_eq!(document.pages.len(), 1);
+        assert_eq!(document.pages[0].word_ids.len(), 4);
     }
 
     #[test]

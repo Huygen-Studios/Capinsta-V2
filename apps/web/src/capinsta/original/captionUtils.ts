@@ -272,11 +272,7 @@ function getCaptionPageDuration(words: AlignedWord[]) {
 }
 
 function endsCaptionPhrase(word: string) {
-  const text = word.trim();
-  if (!/[.,!?;:]$/.test(text)) return false;
-  if (/^[a-z]\.$/i.test(text)) return false;
-  if (/^(?:dr|mr|mrs|ms|prof|sr|jr)\.$/i.test(text)) return false;
-  return true;
+  return /[,!?;:]$/.test(word.trim());
 }
 
 function canMergeCaptionPages(left: AlignedWord[], right: AlignedWord[], options: CaptionChunkingConfig) {
