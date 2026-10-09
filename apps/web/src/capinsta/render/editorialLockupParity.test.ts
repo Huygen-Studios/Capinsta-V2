@@ -91,6 +91,43 @@ describe("Editorial Lockup canonical layout", () => {
 		expect(exportFrame.placements.some((placement) => placement.text === "ika 10")).toBe(false);
 	});
 
+	test("keeps the visual reading order from top-to-bottom and left-to-right", () => {
+		const words: TimedCaptionWord[] = [
+			{ word: "Dr.", start: 0, end: 0.3, score: 1 },
+			{ word: "M.", start: 0.3, end: 0.6, score: 1 },
+			{ word: "Anil", start: 0.6, end: 0.9, score: 1 },
+			{ word: "Kumar", start: 0.9, end: 1.2, score: 1 },
+		];
+		const caption: Caption = {
+			id: "ordered-editorial-lockup",
+			start: 0,
+			end: 1.5,
+			text: "Dr. M. Anil Kumar",
+			lang: "english",
+			theme: "modern_minimalist_lockup",
+			words,
+		};
+		const config = normalizeModernMinimalistStyleConfig(
+			toOriginalCaptionStyleConfig({
+				style: getCapinstaPresetStyle("modern_minimalist_lockup"),
+			}),
+		);
+		const safeLayout = resolveSafeCaptionLayout(config, {
+			canvas,
+			previewScale: 1,
+			words,
+			text: caption.text,
+			safety,
+		});
+		const frame = buildEditorialLockupLayout(words, caption, config, safeLayout, canvas, 1);
+		const visualOrder = [...frame.placements]
+			.sort((left, right) => left.y - right.y || left.x - right.x)
+			.map((placement) => placement.text);
+
+		expect(visualOrder).toEqual(["Dr.", "M.", "Anil", "Kumar"]);
+		expect(frame.placements.find((placement) => placement.isAnchor)?.text).toBe("Kumar");
+	});
+
 	test("preview and export resolve the same complete input frame across preset sequences", () => {
 		const presetIds = [
 			"word_highlight_box",

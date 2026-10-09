@@ -150,11 +150,6 @@ function roundTime(value: number) {
   return Math.round(value * 1000) / 1000;
 }
 
-function interpolate(input: number, inMin: number, inMax: number, outMin: number, outMax: number) {
-  const t = clamp((input - inMin) / Math.max(0.0001, inMax - inMin), 0, 1);
-  return outMin + (outMax - outMin) * t;
-}
-
 function easeOutExpo(t: number) {
   const safe = clamp(t, 0, 1);
   return safe === 1 ? 1 : 1 - Math.pow(2, -10 * safe);
@@ -685,19 +680,6 @@ function estimateWordBox(word: string, fontSize: number, config: CaptionStyleCon
   return { width, height };
 }
 
-function clampCenter(x: number, y: number, width: number, height: number, bounds: LayoutBounds) {
-  if (width > bounds.right - bounds.left || height > bounds.bottom - bounds.top) {
-    return {
-      x: (bounds.left + bounds.right) / 2,
-      y: (bounds.top + bounds.bottom) / 2,
-    };
-  }
-  return {
-    x: clamp(x, bounds.left + width / 2, bounds.right - width / 2),
-    y: clamp(y, bounds.top + height / 2, bounds.bottom - height / 2),
-  };
-}
-
 function placementRect(placement: EditorialWordPlacement) {
   return {
     left: placement.x - placement.width / 2,
@@ -716,15 +698,6 @@ function rectsOverlap(a: EditorialWordPlacement, b: EditorialWordPlacement, padd
     aRect.top < bRect.bottom + padding &&
     aRect.bottom > bRect.top - padding
   );
-}
-
-function isInsideSafeArea(placement: EditorialWordPlacement, bounds: LayoutBounds) {
-  const rect = placementRect(placement);
-  return rect.left >= bounds.left && rect.right <= bounds.right && rect.top >= bounds.top && rect.bottom <= bounds.bottom;
-}
-
-function hasCollision(placement: EditorialWordPlacement, existing: EditorialWordPlacement[], padding: number) {
-  return existing.some((candidate) => rectsOverlap(placement, candidate, padding));
 }
 
 function makeWordPlacement(
@@ -753,110 +726,44 @@ function makeWordPlacement(
   };
 }
 
-function isValidBuildPlacement(
-  placement: EditorialWordPlacement,
-  existing: EditorialWordPlacement[],
-  bounds: LayoutBounds,
-  padding: number
-) {
-  return isInsideSafeArea(placement, bounds) && !hasCollision(placement, existing, padding);
-}
-
-function supportSlotCenters(
-  mode: ResolvedBuildLayoutMode,
-  anchor: EditorialWordPlacement,
-  bounds: LayoutBounds,
-  wordWidth: number,
-  wordHeight: number,
-  padding: number,
-  tightness: number,
-  _asymmetry: number,
-  _seed: number,
-  supportOrder: number
-) {
-  const anchorRect = placementRect(anchor);
-  const safeWidth = bounds.right - bounds.left;
-  const safeHeight = bounds.bottom - bounds.top;
-  const gap = Math.max(padding, interpolate(clamp(tightness, 0, 10), 0, 10, 22, 3));
-  const nudgeX = Math.min(safeWidth * 0.035, gap * 1.8);
-  const nudgeY = Math.min(safeHeight * 0.045, gap * 1.6);
-  const centerX = (bounds.left + bounds.right) / 2;
-  const above = anchorRect.top - gap - wordHeight / 2;
-  const below = anchorRect.bottom + gap + wordHeight / 2;
-  const leftNear = anchorRect.left + wordWidth * 0.55;
-  const rightNear = anchorRect.right - wordWidth * 0.55;
-  const leftTuck = anchorRect.left + Math.min(anchor.width * 0.25, wordWidth * 1.1);
-  const rightTuck = anchorRect.right - Math.min(anchor.width * 0.25, wordWidth * 1.1);
-
-  const templates: Record<ResolvedBuildLayoutMode, Array<{ x: number; y: number }>> = {
-    left_anchor: [
-      { x: rightTuck, y: above },
-      { x: leftNear, y: below },
-      { x: rightNear, y: below },
-    ],
-    center_anchor: [
-      { x: rightTuck, y: above },
-      { x: leftNear, y: below },
-      { x: rightNear, y: below },
-    ],
-    right_anchor: [
-      { x: leftTuck, y: above },
-      { x: leftNear, y: below },
-      { x: rightNear, y: below },
-    ],
-  };
-
-  const primary = templates[mode][supportOrder % 3];
-  const secondary = [
-    primary,
-    { x: primary.x - nudgeX, y: primary.y },
-    { x: primary.x + nudgeX, y: primary.y },
-    { x: primary.x, y: primary.y - nudgeY },
-    { x: primary.x, y: primary.y + nudgeY },
-    { x: anchor.x, y: above },
-    { x: anchor.x, y: below },
-    { x: centerX, y: supportOrder === 0 ? above : below },
-  ];
-
-  return secondary;
-}
-
-function buildFallbackStackLayout(
+function buildOrderedStackLayout(
   words: TimedCaptionWord[],
   anchorIndex: number,
   config: CaptionStyleConfig,
   bounds: LayoutBounds,
   bigFontSize: number,
   smallFontSize: number,
-  collisionPadding: number
+  collisionPadding: number,
+  mode: ResolvedBuildLayoutMode
 ) {
-  const centerX = (bounds.left + bounds.right) / 2;
   const centerY = (bounds.top + bounds.bottom) / 2;
   const availableWidth = Math.max(1, bounds.right - bounds.left);
   const availableHeight = Math.max(1, bounds.bottom - bounds.top);
   const rowGap = Math.max(collisionPadding, smallFontSize * 0.08);
-  const supportIndexes = words.map((_, index) => index).filter((index) => index !== anchorIndex);
-  const split = Math.ceil(supportIndexes.length / 2);
-  const rows = [
-    supportIndexes.slice(0, split),
-    [anchorIndex],
-    supportIndexes.slice(split),
-  ].filter((row) => row.length > 0);
   const lockupScaleAttempts = [1, 0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36, 0.3, 0.24, 0.2, 0.16, 0.12, 0.08];
 
-  const buildRows = (globalScale: number) => rows.map((row) => {
-    const items = row.map((index) => {
+  const buildRows = (globalScale: number) => {
+    const items = words.map((word, index) => {
       const isAnchor = index === anchorIndex;
       const fontSize = (isAnchor ? bigFontSize : smallFontSize) * globalScale;
-      const size = estimateWordBox(words[index].word, fontSize, config);
+      const size = estimateWordBox(word.word, fontSize, config);
       return { index, isAnchor, fontSize, ...size };
     });
-    return {
-      items,
-      width: items.reduce((total, item) => total + item.width, 0) + Math.max(0, items.length - 1) * collisionPadding,
-      height: Math.max(1, ...items.map((item) => item.height)),
-    };
-  });
+
+    const rows: Array<{ items: typeof items; width: number; height: number }> = [];
+    for (const item of items) {
+      const row = rows[rows.length - 1];
+      const nextWidth = row ? row.width + collisionPadding + item.width : item.width;
+      if (!row || row.items.length >= 2 || nextWidth > availableWidth) {
+        rows.push({ items: [item], width: item.width, height: item.height });
+      } else {
+        row.items.push(item);
+        row.width = nextWidth;
+        row.height = Math.max(row.height, item.height);
+      }
+    }
+    return rows;
+  };
 
   let resolvedRows = buildRows(lockupScaleAttempts[lockupScaleAttempts.length - 1]);
   for (const lockupScale of lockupScaleAttempts) {
@@ -875,7 +782,11 @@ function buildFallbackStackLayout(
 
   resolvedRows.forEach((row) => {
     const rowY = y + row.height / 2;
-    let x = centerX - row.width / 2;
+    let x = mode === "left_anchor"
+      ? bounds.left
+      : mode === "right_anchor"
+        ? bounds.right - row.width
+        : (bounds.left + bounds.right - row.width) / 2;
     row.items.forEach((item) => {
       const center = {
         x: x + item.width / 2,
@@ -919,8 +830,6 @@ export function buildEditorialLockupLayout(
   };
 
   const collisionPadding = Math.max(0, (config.collisionPadding ?? 8) * scale);
-  const safeWidth = Math.max(1, bounds.right - bounds.left);
-  const safeHeight = Math.max(1, bounds.bottom - bounds.top);
   const configuredBigFontSize = clamp(config.bigFontSizePx ?? BUILD_BIG_FONT_SIZE_PX, 80, 400) * scale;
   const configuredSmallFontSize = Math.min(
     configuredBigFontSize * 0.78,
@@ -929,102 +838,18 @@ export function buildEditorialLockupLayout(
       clamp(config.smallFontSizePx ?? BUILD_SMALL_FONT_SIZE_PX, 20, 160) * scale
     )
   );
-  const tightness = clamp(config.tightness ?? 0.75, 0, 10);
   const modeInput = normalizeBuildLayoutMode(config.layoutMode);
   const mode = modeInput === "auto" ? autoBuildLayoutMode(activeCaption.id, groupIndex) : modeInput;
   const anchorIndex = chooseAnchorIndex(words);
-  const anchorWord = words[anchorIndex];
-  const lockupScaleAttempts = [1, 0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36, 0.3, 0.24, 0.2, 0.16, 0.12, 0.08];
-
-  const modeAnchorCenter = (currentMode: ResolvedBuildLayoutMode) => {
-    const midX = (bounds.left + bounds.right) / 2;
-    const midY = (bounds.top + bounds.bottom) / 2;
-    if (currentMode === "left_anchor") {
-      return { x: bounds.left + safeWidth * 0.43, y: midY + safeHeight * 0.02 };
-    }
-    if (currentMode === "right_anchor") {
-      return { x: bounds.left + safeWidth * 0.57, y: midY - safeHeight * 0.01 };
-    }
-    return { x: midX, y: midY };
-  };
-
-  const isNearAnchor = (placement: EditorialWordPlacement, anchor: EditorialWordPlacement) => {
-    const placementBounds = placementRect(placement);
-    const anchorBounds = placementRect(anchor);
-    const xGap = Math.max(anchorBounds.left - placementBounds.right, placementBounds.left - anchorBounds.right, 0);
-    const yGap = Math.max(anchorBounds.top - placementBounds.bottom, placementBounds.top - anchorBounds.bottom, 0);
-    return Math.hypot(xGap, yGap) <= Math.max(safeHeight * 0.2, collisionPadding * 2);
-  };
-
-  const placeSupportWord = (
-    index: number,
-    supportOrder: number,
-    mode: ResolvedBuildLayoutMode,
-    anchor: EditorialWordPlacement,
-    placements: EditorialWordPlacement[],
-    fontSize: number
-  ) => {
-    const probe = makeWordPlacement(words[index], index, fontSize, 0, 0, "supporting", config);
-    const slots = supportSlotCenters(
-      mode,
-      anchor,
-      bounds,
-      probe.width,
-      probe.height,
-      collisionPadding,
-      tightness,
-      0,
-      0,
-      supportOrder
-    );
-
-    for (const slot of slots) {
-      const center = clampCenter(slot.x, slot.y, probe.width, probe.height, bounds);
-      const candidate = makeWordPlacement(words[index], index, fontSize, center.x, center.y, "supporting", config);
-      if (isValidBuildPlacement(candidate, placements, bounds, collisionPadding) && isNearAnchor(candidate, anchor)) {
-        return candidate;
-      }
-    }
-
-    return null;
-  };
-
-  for (const lockupScale of lockupScaleAttempts) {
-    const anchorFont = configuredBigFontSize * lockupScale;
-    const supportFont = configuredSmallFontSize * lockupScale;
-    const baseAnchor = modeAnchorCenter(mode);
-    const anchorProbe = makeWordPlacement(anchorWord, anchorIndex, anchorFont, 0, 0, "anchor", config);
-    const anchorCenter = clampCenter(baseAnchor.x, baseAnchor.y, anchorProbe.width, anchorProbe.height, bounds);
-    const anchor = makeWordPlacement(anchorWord, anchorIndex, anchorFont, anchorCenter.x, anchorCenter.y, "anchor", config);
-    if (!isInsideSafeArea(anchor, bounds)) continue;
-
-    const placements: EditorialWordPlacement[] = [anchor];
-    const supportIndexes = words.map((_, index) => index).filter((index) => index !== anchorIndex);
-    let failed = false;
-
-    for (let supportOrder = 0; supportOrder < supportIndexes.length; supportOrder += 1) {
-      const index = supportIndexes[supportOrder];
-      const placement = placeSupportWord(index, supportOrder, mode, anchor, placements, supportFont);
-      if (!placement) {
-        failed = true;
-        break;
-      }
-      placements.push(placement);
-    }
-
-    if (!failed) {
-      return { width, height, bounds, collisionPadding, fallback: false, placements };
-    }
-  }
-
-  const fallbackPlacements = buildFallbackStackLayout(
+  const placements = buildOrderedStackLayout(
     words,
     anchorIndex,
     config,
     bounds,
     configuredBigFontSize,
     configuredSmallFontSize,
-    collisionPadding
+    collisionPadding,
+    mode
   );
 
   return {
@@ -1032,8 +857,8 @@ export function buildEditorialLockupLayout(
     height,
     bounds,
     collisionPadding,
-    fallback: true,
-    placements: fallbackPlacements,
+    fallback: false,
+    placements,
   };
 }
 
