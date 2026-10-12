@@ -31,6 +31,7 @@ export type CaptionTheme =
   | "mrbeast_style"
   | "apple_cinematic"
   | "modern_minimalist_lockup"
+  | "focus_hierarchy"
   | "dynamic_punch"
   | "viral_word_highlight"
   | "minimal"
@@ -57,6 +58,7 @@ export type CaptionStylePresetId =
   | "mrbeast_style"
   | "apple_cinematic"
   | "modern_minimalist_lockup"
+  | "focus_hierarchy"
   | "dynamic_punch";
 
 export type CaptionTimingSource =
@@ -639,6 +641,22 @@ export const CAPTION_THEMES: Record<CaptionTheme, CaptionStyle> = {
     padding: "0",
     shadow: "none",
     animation: "slide-up",
+  },
+  focus_hierarchy: {
+    fontSize: 82,
+    fontFamily: "'Poppins', 'Inter', Arial, sans-serif",
+    color: "#ffffff",
+    backgroundColor: "transparent",
+    bold: true,
+    outline: true,
+    outlineColor: "#111111",
+    position: "center",
+    textTransform: "none",
+    letterSpacing: "0",
+    borderRadius: "0",
+    padding: "0",
+    shadow: "3px 3px 3px rgba(0,0,0,0.9)",
+    animation: "pop",
   },
   viral_word_highlight: {
     fontSize: 64,

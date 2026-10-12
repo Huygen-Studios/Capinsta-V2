@@ -152,6 +152,9 @@ export function CapinstaCaptionStylePanel(
 	}, [editor.playback]);
 
 	if (!style) return null;
+	const usesHierarchyLayout =
+		style.presetId === "modern_minimalist_lockup" ||
+		style.presetId === "focus_hierarchy";
 
 	function replaceRecord(nextRecord: CapinstaCaptionDocumentRecord) {
 		if (!binding || !singleTrackId) return;
@@ -463,6 +466,40 @@ export function CapinstaCaptionStylePanel(
 						))}
 					</select>
 				</label>
+				{usesHierarchyLayout ? (
+					<>
+						<label className="grid gap-1 text-xs">
+							<span className="text-muted-foreground">Highlight font</span>
+							<select
+								value={commonValue("lockup.bigFontFamily", style.lockup.bigFontFamily)}
+								onChange={(event) =>
+									updateStyle({ lockup: { bigFontFamily: event.currentTarget.value } })
+								}
+								className="bg-background rounded-sm border px-2 py-1"
+							>
+								{hasMixedValue("lockup.bigFontFamily") ? <option value="">Mixed</option> : null}
+								{CAPINSTA_FONT_REGISTRY.map((font) => (
+									<option key={font.id} value={font.cssFamily}>{font.label}</option>
+								))}
+							</select>
+						</label>
+						<label className="grid gap-1 text-xs">
+							<span className="text-muted-foreground">Supporting font</span>
+							<select
+								value={commonValue("lockup.smallFontFamily", style.lockup.smallFontFamily)}
+								onChange={(event) =>
+									updateStyle({ lockup: { smallFontFamily: event.currentTarget.value } })
+								}
+								className="bg-background rounded-sm border px-2 py-1"
+							>
+								{hasMixedValue("lockup.smallFontFamily") ? <option value="">Mixed</option> : null}
+								{CAPINSTA_FONT_REGISTRY.map((font) => (
+									<option key={font.id} value={font.cssFamily}>{font.label}</option>
+								))}
+							</select>
+						</label>
+					</>
+				) : null}
 				<label className="grid gap-1 text-xs">
 					<span className="text-muted-foreground">Weight</span>
 					<select

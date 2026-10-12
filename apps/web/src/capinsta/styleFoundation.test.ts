@@ -38,7 +38,7 @@ function recordForDocument(): CapinstaCaptionDocumentRecord {
 	};
 }
 
-const ORIGINAL_PRESET_EXPECTATIONS: Record<
+const ORIGINAL_PRESET_EXPECTATIONS: Partial<Record<
 	CapinstaCaptionPresetId,
 	{
 		name: string;
@@ -67,7 +67,7 @@ const ORIGINAL_PRESET_EXPECTATIONS: Record<
 		minCaptionDuration: number;
 		maxCaptionDuration: number;
 	}
-> = {
+>> = {
 	word_highlight_box: {
 		name: "Word Highlight Box",
 		description: "Clean creator captions with active-word highlighting.",
@@ -244,15 +244,16 @@ describe("Capinsta style foundation", () => {
 			"kinetic_fade",
 			"mrbeast_style",
 			"modern_minimalist_lockup",
+			"focus_hierarchy",
 			"dynamic_punch",
 		]);
 	});
 
 	test("six preset values match the extracted original Capinsta registry", () => {
 		for (const preset of CAPINSTA_CAPTION_PRESETS.filter(
-			(preset) => preset.id !== "dynamic_punch",
+			(preset) => preset.id !== "dynamic_punch" && preset.id !== "focus_hierarchy",
 		)) {
-			const expected = ORIGINAL_PRESET_EXPECTATIONS[preset.id];
+			const expected = ORIGINAL_PRESET_EXPECTATIONS[preset.id]!;
 
 			expect(preset.name).toBe(expected.name);
 			expect(preset.description).toBe(expected.description);
@@ -297,6 +298,17 @@ describe("Capinsta style foundation", () => {
 				expected.maxCaptionDuration,
 			);
 		}
+	});
+
+	test("Focus Hierarchy pairs readable support text with a colored display anchor", () => {
+		const focus = getCapinstaPresetStyle("focus_hierarchy");
+
+		expect(focus.text.fontFamily).toBe("Poppins");
+		expect(focus.lockup.smallFontFamily).toBe("Poppins");
+		expect(focus.lockup.bigFontFamily).toBe("Tactic");
+		expect(focus.lockup.bigFontSizePx).toBeGreaterThan(focus.lockup.smallFontSizePx);
+		expect(focus.activeWord.color).toBe("#F4F800");
+		expect(focus.effects.smartHighlightEnabled).toBe(true);
 	});
 
 	test("ports original fidelity fields that affect preset visuals", () => {

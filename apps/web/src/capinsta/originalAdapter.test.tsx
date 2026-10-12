@@ -136,4 +136,41 @@ describe("original Capinsta renderer adapter", () => {
 		expect(markup).toContain("visibility:hidden");
 		expect(markup).not.toContain("change your life today");
 	});
+
+	test("Focus Hierarchy renders its capitalized anchor with the display font and color", () => {
+		const document = buildDocument();
+		const style = getCapinstaPresetStyle("focus_hierarchy");
+		document.stylePresetId = "focus_hierarchy";
+		document.style = style;
+		document.clips[0] = {
+			...document.clips[0]!,
+			text: "because the TRUST matters",
+			stylePresetId: "focus_hierarchy",
+			style,
+		};
+		document.words = document.words.map((word, index) => ({
+			...word,
+			text: ["because", "the", "TRUST", "matters"][index]!,
+			displayedText: ["because", "the", "TRUST", "matters"][index]!,
+		}));
+		const caption = toOriginalCaption({
+			document,
+			clip: document.clips[0]!,
+			style,
+		});
+		const markup = renderToStaticMarkup(
+			<OriginalCaptionRenderer
+				captions={[caption]}
+				currentTime={0.9}
+				fps={30}
+				scale={1}
+				styleConfig={toOriginalCaptionStyleConfig({ style })}
+				canvasSize={{ width: 1080, height: 1920 }}
+			/>,
+		);
+
+		expect(markup).toContain('data-caption-theme="focus_hierarchy"');
+		expect(markup).toContain("color:#F4F800");
+		expect(markup).toContain("font-family:&quot;Tactic&quot;");
+	});
 });

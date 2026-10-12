@@ -356,6 +356,7 @@ describe("Capinsta export render helpers", () => {
 			["kinetic_fade", "kinetic_fade"],
 			["mrbeast_style", "mrbeast_style"],
 			["modern_minimalist_lockup", "modern_minimalist_lockup"],
+			["focus_hierarchy", "focus_hierarchy"],
 			["dynamic_punch", "dynamic_punch"],
 		]);
 

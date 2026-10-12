@@ -128,6 +128,41 @@ describe("Editorial Lockup canonical layout", () => {
 		expect(frame.placements.find((placement) => placement.isAnchor)?.text).toBe("Kumar");
 	});
 
+	test("Focus Hierarchy prefers explicitly capitalized impact words without reordering", () => {
+		const words: TimedCaptionWord[] = [
+			{ word: "because", start: 0, end: 0.3, score: 1 },
+			{ word: "the", start: 0.3, end: 0.5, score: 1 },
+			{ word: "TRUST", start: 0.5, end: 0.8, score: 1 },
+			{ word: "already", start: 0.8, end: 1.1, score: 1 },
+		];
+		const caption: Caption = {
+			id: "focus-hierarchy-emphasis",
+			start: 0,
+			end: 1.4,
+			text: "because the TRUST already",
+			lang: "english",
+			theme: "focus_hierarchy",
+			words,
+		};
+		const config = normalizeModernMinimalistStyleConfig(
+			toOriginalCaptionStyleConfig({ style: getCapinstaPresetStyle("focus_hierarchy") }),
+		);
+		const safeLayout = resolveSafeCaptionLayout(config, {
+			canvas,
+			previewScale: 1,
+			words,
+			text: caption.text,
+			safety,
+		});
+		const frame = buildEditorialLockupLayout(words, caption, config, safeLayout, canvas, 1);
+		const visualOrder = [...frame.placements]
+			.sort((left, right) => left.y - right.y || left.x - right.x)
+			.map((placement) => placement.text);
+
+		expect(frame.placements.find((placement) => placement.isAnchor)?.text).toBe("TRUST");
+		expect(visualOrder).toEqual(words.map((word) => word.word));
+	});
+
 	test("preview and export resolve the same complete input frame across preset sequences", () => {
 		const presetIds = [
 			"word_highlight_box",

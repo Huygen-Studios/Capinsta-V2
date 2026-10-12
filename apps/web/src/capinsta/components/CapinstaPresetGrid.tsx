@@ -4,6 +4,7 @@ import { CAPINSTA_CAPTION_PRESETS } from "../styles/presetRegistry";
 import type { CapinstaCaptionPresetId } from "../styles/styleTypes";
 import { cn } from "@/utils/ui";
 import { styleToPreview } from "../styles/styleToPreview";
+import { CAPINSTA_FONT_STACKS } from "../fonts/captionFontRegistry";
 
 export function CapinstaPresetGrid({
 	activePresetId,
@@ -39,6 +40,7 @@ function PresetButton({
 		style: preset.style,
 		viewport: { width: 240, height: 135 },
 	});
+	const isFocusHierarchy = preset.id === "focus_hierarchy";
 	return (
 		<button
 			type="button"
@@ -65,8 +67,14 @@ function PresetButton({
 								: undefined,
 					}}
 				>
-					<span>Cap</span>{" "}
-					<span style={preview.activeWordStyle}>style</span>
+					<span style={isFocusHierarchy ? {
+						fontFamily: CAPINSTA_FONT_STACKS[preset.style.lockup.smallFontFamily],
+					} : undefined}>read</span>{" "}
+					<span style={isFocusHierarchy ? {
+						...preview.activeWordStyle,
+						fontFamily: CAPINSTA_FONT_STACKS[preset.style.lockup.bigFontFamily],
+						fontSize: 18,
+					} : preview.activeWordStyle}>{isFocusHierarchy ? "FOCUS" : "style"}</span>
 				</span>
 			</div>
 			<div className="font-medium">{preset.name}</div>

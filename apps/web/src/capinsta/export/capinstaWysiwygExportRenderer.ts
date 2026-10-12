@@ -411,6 +411,9 @@ function paintEditorialLockupFrame({
 	timeSeconds: number;
 	canvasSize: CaptionCanvasSize;
 }): CapinstaWysiwygExportResult {
+	const strategy = renderData.captionStyle.presetId === "focus_hierarchy"
+		? "focus_hierarchy"
+		: "modern_minimalist_lockup";
 	const model = createCapinstaRenderModelFromExportData({
 		renderData,
 		activeWordIds,
@@ -444,12 +447,12 @@ function paintEditorialLockupFrame({
 			activeWordIds,
 			config,
 			model,
-			strategy: "modern_minimalist_lockup",
+			strategy,
 		});
 	}
 	const words = wordGroup.words;
 	if (!words.some((word) => timeSeconds >= word.start && timeSeconds < wordGroup.end)) {
-		return emptyResult({ renderData, activeWordIds, config, model, strategy: "modern_minimalist_lockup" });
+		return emptyResult({ renderData, activeWordIds, config, model, strategy });
 	}
 	const layout = resolveSafeCaptionLayout(config, {
 		canvas: canvasSize,
@@ -514,7 +517,9 @@ function paintEditorialLockupFrame({
 			x: 0,
 			y: 0,
 			config,
-			fillStyle: placement.index === activeIndex ? config.activeWordColor : config.textColor,
+			fillStyle: (config.smartHighlightEnabled ? placement.isAnchor : placement.index === activeIndex)
+				? config.activeWordColor
+				: config.textColor,
 			scale: 1,
 		});
 		ctx.restore();
@@ -524,7 +529,7 @@ function paintEditorialLockupFrame({
 	return {
 		debug: {
 			rendererPath: "rendered_capinsta_wysiwyg",
-			rendererStrategy: "modern_minimalist_lockup",
+			rendererStrategy: strategy,
 			clipId: renderData.clipId,
 			clipText: renderData.clipText,
 			presetId: renderData.captionStyle.presetId,
@@ -867,7 +872,7 @@ export function paintCapinstaCaptionFrame({
 			strategy: "apple_cinematic",
 		});
 	}
-	if (presetId === "modern_minimalist_lockup") {
+	if (presetId === "modern_minimalist_lockup" || presetId === "focus_hierarchy") {
 		return paintEditorialLockupFrame({
 			ctx,
 			renderData,

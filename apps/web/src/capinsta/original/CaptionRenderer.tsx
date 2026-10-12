@@ -557,9 +557,12 @@ function cleanedToken(word: string) {
   return word.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function chooseAnchorIndex(words: TimedCaptionWord[]) {
+function chooseAnchorIndex(words: TimedCaptionWord[], preferWrittenEmphasis = false) {
   if (words.length === 0) return 0;
 
+  const firstCapitalizedIndex = preferWrittenEmphasis
+    ? words.findIndex((word) => /^[A-Z][a-z]/.test(word.word.trim()))
+    : -1;
   let bestIndex = 0;
   let bestScore = Number.NEGATIVE_INFINITY;
   words.forEach((word, index) => {
@@ -569,7 +572,14 @@ function chooseAnchorIndex(words: TimedCaptionWord[]) {
     const numberBoost = /\d/.test(clean) ? 2.8 : 0;
     const emphasisBoost = /[!?]/.test(word.word) ? 1.4 : 0;
     const firstWordBoost = index === 0 ? 0.45 : 0;
-    const score = lengthScore + numberBoost + emphasisBoost + firstWordBoost + connectorPenalty;
+    const writtenEmphasisBoost = preferWrittenEmphasis
+      ? (/^[A-Z0-9]+(?:['’-][A-Z]+)*[!?.,]?$/.test(word.word.trim()) && clean.length > 1
+          ? 10
+          : /^[A-Z][a-z]/.test(word.word.trim())
+            ? index === firstCapitalizedIndex ? 8 : 5
+            : 0)
+      : 0;
+    const score = lengthScore + numberBoost + emphasisBoost + firstWordBoost + connectorPenalty + writtenEmphasisBoost;
     if (score > bestScore) {
       bestScore = score;
       bestIndex = index;
@@ -840,7 +850,7 @@ export function buildEditorialLockupLayout(
   );
   const modeInput = normalizeBuildLayoutMode(config.layoutMode);
   const mode = modeInput === "auto" ? autoBuildLayoutMode(activeCaption.id, groupIndex) : modeInput;
-  const anchorIndex = chooseAnchorIndex(words);
+  const anchorIndex = chooseAnchorIndex(words, config.smartHighlightEnabled);
   const placements = buildOrderedStackLayout(
     words,
     anchorIndex,
@@ -938,7 +948,7 @@ function renderModernMinimalistLockup(
         ...positionStyle,
         height: `${layoutSafety.maxHeightPercent}%`,
       }}
-      data-caption-theme="modern_minimalist_lockup"
+      data-caption-theme={activeCaption.theme}
     >
       <div
         style={{
@@ -972,7 +982,8 @@ function renderModernMinimalistLockup(
           const visible = currentTime >= word.start && currentTime < wordGroup.end;
           const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
           const isActive = placement.index === activeIndex;
-          const glow = config.activeWordGlow && isActive ? `0 0 ${Math.round(12 * scale)}px ${config.activeWordColor}` : "";
+          const isHighlighted = config.smartHighlightEnabled ? placement.isAnchor : isActive;
+          const glow = config.activeWordGlow && isHighlighted ? `0 0 ${Math.round(12 * scale)}px ${config.activeWordColor}` : "";
           const textShadow = [buildConfigTextShadow(config), glow].filter(Boolean).join(", ") || undefined;
 
           return (
@@ -986,7 +997,7 @@ function renderModernMinimalistLockup(
                 fontFamily: resolveFontFamily(placement.isAnchor ? (config.bigFontFamily || config.fontFamily) : (config.smallFontFamily || config.fontFamily)),
                 fontSize: placement.fontSize,
                 fontWeight: Number(config.fontWeight) || 900,
-                color: isActive ? config.activeWordColor : config.textColor,
+                color: isHighlighted ? config.activeWordColor : config.textColor,
                 letterSpacing: `${config.letterSpacing}px`,
                 lineHeight,
                 textTransform: config.textTransform,
@@ -1201,7 +1212,7 @@ export default function CaptionRenderer({
     return renderAppleCinematic(activeCaption, currentTime, fps, scale, styleConfig, canvasSize);
   }
 
-  if (activeCaption.theme === "modern_minimalist_lockup") {
+  if (activeCaption.theme === "modern_minimalist_lockup" || activeCaption.theme === "focus_hierarchy") {
     return renderModernMinimalistLockup(activeCaption, currentTime, fps, scale, styleConfig, canvasSize);
   }
 
