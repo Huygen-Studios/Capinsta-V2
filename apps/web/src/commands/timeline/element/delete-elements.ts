@@ -3,6 +3,7 @@ import type { SceneTracks } from "@/timeline";
 import { EditorCore } from "@/core";
 import type { TimelineTrack } from "@/timeline";
 import { removeDeletedCapinstaCaptions } from "@/capinsta/captionDeletion";
+import type { CapinstaCaptionDocumentRecord } from "@/capinsta/types";
 
 function removeTrackElements<TTrack extends TimelineTrack>({
 	track,
