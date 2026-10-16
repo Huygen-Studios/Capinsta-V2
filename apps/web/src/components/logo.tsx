@@ -2,8 +2,11 @@
 
 import Image from "next/image";
 import { useTheme } from "next-themes";
-import { LOGOS } from "@/site/brand";
 import { cn } from "@/utils/ui";
+import logoLight from "../../public/logos/capinsta/logo-light.png";
+import logo from "../../public/logos/capinsta/logo.png";
+import symbolLight from "../../public/logos/capinsta/symbol-light.png";
+import symbol from "../../public/logos/capinsta/symbol.png";
 
 type LogoVariant = "wordmark" | "mark";
 
@@ -37,8 +40,8 @@ export function Logo({
 	const { resolvedTheme } = useTheme();
 	const isDark = resolvedTheme === "dark";
 
-	const src = variant === "mark" ? LOGOS.mark : LOGOS.wordmark;
-	const srcLight = variant === "mark" ? LOGOS.markLight : LOGOS.wordmarkLight;
+	const src = variant === "mark" ? symbol : logo;
+	const srcLight = variant === "mark" ? symbolLight : logoLight;
 
 	// On dark surfaces use the light-on-dark asset; otherwise the dark-on-light one.
 	const activeSrc = isDark ? srcLight : src;
@@ -72,8 +75,8 @@ export function LogoStatic({
 	alt = "Capinsta",
 	priority = false,
 }: LogoProps) {
-	const src = variant === "mark" ? LOGOS.mark : LOGOS.wordmark;
-	const srcLight = variant === "mark" ? LOGOS.markLight : LOGOS.wordmarkLight;
+	const src = variant === "mark" ? symbol : logo;
+	const srcLight = variant === "mark" ? symbolLight : logoLight;
 	const aspect = variant === "mark" ? 1 : 7538 / 1667;
 	const width = Math.round(height * aspect);
 
@@ -97,7 +100,10 @@ export function LogoStatic({
 				width={width}
 				height={height}
 				priority={priority}
-				className={cn("object-contain select-none hidden dark:block", className)}
+				className={cn(
+					"object-contain select-none hidden dark:block",
+					className,
+				)}
 				sizes={`${width}px`}
 			/>
 		</>

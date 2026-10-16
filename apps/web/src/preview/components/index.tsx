@@ -31,6 +31,7 @@ import {
 	computePreviewDimensions,
 } from "@/preview/preview-store";
 import { useAutoPreviewQuality } from "@/preview/hooks/use-auto-preview-quality";
+import { measurePlayback } from "@/core/playback-performance";
 import { updatePreviewSyncDiagnostics } from "@/preview/sync-diagnostics";
 import { EditorHelpButton } from "@/components/editor/editor-help-button";
 import { EDITOR_HELP_CONTENT } from "@/components/editor/editor-help-content";
@@ -238,8 +239,14 @@ function PreviewCanvas({
 		Math.max(
 			0.25,
 			Math.min(
-				(viewport.sceneWidth * (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1) * 1.2) / nativeWidth,
-				(viewport.sceneHeight * (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1) * 1.2) / nativeHeight,
+				(viewport.sceneWidth *
+					(typeof window === "undefined" ? 1 : window.devicePixelRatio || 1) *
+					1.2) /
+					nativeWidth,
+				(viewport.sceneHeight *
+					(typeof window === "undefined" ? 1 : window.devicePixelRatio || 1) *
+					1.2) /
+					nativeHeight,
 			),
 		),
 	);
@@ -366,6 +373,11 @@ function PreviewCanvas({
 						captionTime: renderTime / TICKS_PER_SECOND,
 						renderDurationMs,
 					});
+					measurePlayback(
+						"play-to-visible-frame",
+						"play-click",
+						"first-composited-frame",
+					);
 				}
 			})
 			.catch((error) => {

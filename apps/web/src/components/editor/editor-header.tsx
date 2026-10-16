@@ -16,13 +16,12 @@ import { EditorGuideButton } from "./editor-guide-button";
 import { EditorHelpButton } from "./editor-help-button";
 import { EDITOR_HELP_CONTENT } from "./editor-help-content";
 import { ThemeToggle } from "../theme-toggle";
-import { LOGOS } from "@/site/brand";
+import { LogoStatic } from "@/components/logo";
 import { toast } from "sonner";
 import { useEditor } from "@/editor/use-editor";
 import { CommandIcon, Logout05Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ShortcutsDialog } from "@/actions/components/shortcuts-dialog";
-import Image from "next/image";
 import { cn } from "@/utils/ui";
 import {
 	AlertDialog,
@@ -126,22 +125,8 @@ function ProjectDropdown() {
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
 					<Button variant="ghost" size="icon" className="p-1 rounded-sm size-8">
-							<Image
-								src={LOGOS.mark}
-								alt="Capinsta"
-								width={32}
-								height={32}
-								className="object-contain size-5 dark:hidden"
-							/>
-							<Image
-								src={LOGOS.markLight}
-								alt=""
-								aria-hidden
-								width={32}
-								height={32}
-								className="object-contain size-5 hidden dark:block"
-							/>
-						</Button>
+						<LogoStatic variant="mark" height={20} alt="Capinsta" />
+					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start" className="z-100 w-44">
 					<DropdownMenuItem
@@ -158,9 +143,8 @@ function ProjectDropdown() {
 					>
 						Shortcuts
 					</DropdownMenuItem>
-
-					</DropdownMenuContent>
-				</DropdownMenu>
+				</DropdownMenuContent>
+			</DropdownMenu>
 			<RenameProjectDialog
 				isOpen={openDialog === "rename"}
 				onOpenChange={(isOpen) => setOpenDialog(isOpen ? "rename" : null)}

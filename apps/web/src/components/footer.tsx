@@ -1,12 +1,6 @@
 import Link from "next/link";
-import Image from "next/image";
-import {
-	PRODUCT_BY_LINE,
-	copyrightLine,
-	ROUTES,
-	BRAND,
-	LOGOS,
-} from "@/site/brand";
+import { PRODUCT_BY_LINE, copyrightLine, ROUTES, BRAND } from "@/site/brand";
+import { LogoStatic } from "@/components/logo";
 
 type FooterLink = { label: string; href: string };
 
@@ -72,9 +66,7 @@ export function Footer() {
 											href={link.href}
 											className="text-muted-foreground hover:text-foreground text-sm transition-colors"
 											target={
-												link.href.startsWith("http")
-													? "_blank"
-													: undefined
+												link.href.startsWith("http") ? "_blank" : undefined
 											}
 											rel={
 												link.href.startsWith("http")
@@ -92,28 +84,20 @@ export function Footer() {
 				</div>
 
 				{/* Bottom bar */}
-					<div className="border-t border-border mt-12 flex flex-col items-center justify-between gap-4 pt-8 sm:flex-row">
-						<div className="flex items-center gap-3">
-							<Image
-								src={LOGOS.mark}
-								alt={BRAND.productName}
-								width={24}
-								height={24}
-								className="object-contain"
-							/>
-							<span className="text-foreground text-sm font-semibold">
-								{BRAND.productName}
-							</span>
-							<span className="text-muted-foreground text-sm">
-								{PRODUCT_BY_LINE}
-							</span>
-						</div>
-						<div className="flex items-center gap-4">
-							<p className="text-muted-foreground text-sm">
-								{copyrightLine()}
-							</p>
-						</div>
+				<div className="border-t border-border mt-12 flex flex-col items-center justify-between gap-4 pt-8 sm:flex-row">
+					<div className="flex items-center gap-3">
+						<LogoStatic variant="mark" height={24} alt={BRAND.productName} />
+						<span className="text-foreground text-sm font-semibold">
+							{BRAND.productName}
+						</span>
+						<span className="text-muted-foreground text-sm">
+							{PRODUCT_BY_LINE}
+						</span>
 					</div>
+					<div className="flex items-center gap-4">
+						<p className="text-muted-foreground text-sm">{copyrightLine()}</p>
+					</div>
+				</div>
 			</div>
 		</footer>
 	);

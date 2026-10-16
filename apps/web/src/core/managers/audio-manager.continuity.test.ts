@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { resolveContinuousClipSchedule } from "./audio-manager";
+import {
+	resolveContinuousClipSchedule,
+	selectBlockingAudioClips,
+} from "./audio-manager";
+import type { AudioClipSource } from "@/media/audio";
 
 describe("continuous preview audio scheduling", () => {
 	test("a 50 second clip is represented by one uninterrupted source schedule", () => {
@@ -68,5 +72,31 @@ describe("continuous preview audio scheduling", () => {
 				clipEnd: 50,
 			}),
 		).toBeNull();
+	});
+});
+
+describe("blocking preview audio", () => {
+	test("waits only for clips that must start with the transport", () => {
+		const clip = (overrides: Partial<AudioClipSource>) =>
+			({
+				id: "clip",
+				startTime: 0,
+				duration: 5,
+				muted: false,
+				...overrides,
+			}) as AudioClipSource;
+
+		expect(
+			selectBlockingAudioClips({
+				clips: [
+					clip({ id: "current", startTime: 8 }),
+					clip({ id: "near", startTime: 10.05 }),
+					clip({ id: "future", startTime: 11 }),
+					clip({ id: "muted", startTime: 10, muted: true }),
+				],
+				time: 10,
+				leadSeconds: 0.075,
+			}).map((item) => item.id),
+		).toEqual(["current", "near"]);
 	});
 });

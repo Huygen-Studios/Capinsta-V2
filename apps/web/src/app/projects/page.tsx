@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { EditorCore } from "@/core";
 import { MigrationDialog } from "@/project/components/migration-dialog";
@@ -68,7 +68,7 @@ import { cn } from "@/utils/ui";
 import { ChangelogNotification } from "@/changelog/components/changelog-notification";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoStatic } from "@/components/logo";
-import { ProjectsOnboardingCard } from "@/components/onboarding/projects-onboarding-card";
+import { ProjectsOnboardingModal } from "@/components/onboarding/projects-onboarding-card";
 
 const formatProjectDuration = ({
 	duration,
@@ -121,6 +121,7 @@ export default function ProjectsPage() {
 			<MigrationDialog />
 			<StoragePersistenceDialog />
 			<ChangelogNotification />
+			<ProjectsOnboardingModal />
 			<ProjectsHeader />
 			<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
 			<main className="mx-auto flex max-w-[1800px] flex-col gap-4 px-4 pb-8 pt-3">
@@ -735,7 +736,9 @@ function ProjectItem({
 					<div
 						className={cn(
 							"group relative rounded-lg outline-none",
-							isSelected && isGridView && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+							isSelected &&
+								isGridView &&
+								"ring-2 ring-primary ring-offset-2 ring-offset-background",
 						)}
 					>
 						{isGridView ? (
@@ -985,8 +988,6 @@ function EmptyState() {
 	const router = useRouter();
 	const editor = useEditor();
 	const savedProjects = editor.project.getSavedProjects();
-	const [onboardingComplete, setOnboardingComplete] = useState(false);
-	const completeOnboarding = useCallback(() => setOnboardingComplete(true), []);
 
 	const handleCreateProject = async () => {
 		try {
@@ -1018,7 +1019,7 @@ function EmptyState() {
 						</p>
 					</div>
 				</div>
-			<Button
+				<Button
 					onClick={() => setSearchQuery({ query: "" })}
 					variant="outline"
 					size="lg"
@@ -1029,7 +1030,6 @@ function EmptyState() {
 		);
 	}
 
-	if (!onboardingComplete) return <ProjectsOnboardingCard onDone={completeOnboarding} />;
 	return (
 		<div className="mx-auto flex max-w-xl flex-col items-center justify-center gap-6 rounded-sm border-2 border-border bg-card px-8 py-16 text-center shadow-[5px_5px_0_var(--shadow-strong)]">
 			<div className="flex flex-col items-center gap-2">
@@ -1045,7 +1045,12 @@ function EmptyState() {
 					videos. All privately.
 				</p>
 			</div>
-			<Button size="lg" variant="lime" className="gap-2 font-black" onClick={handleCreateProject}>
+			<Button
+				size="lg"
+				variant="lime"
+				className="gap-2 font-black"
+				onClick={handleCreateProject}
+			>
 				<HugeiconsIcon icon={PlusSignIcon} />
 				Create your first project
 			</Button>

@@ -12,6 +12,7 @@
 		"lint:update-baseline": "cross-env UPDATE_ESLINT_BASELINE=true bun scripts/lint-with-baseline.ts",
 		"lint:fix": "eslint src --ext .ts,.tsx --fix",
 		"format": "prettier src --write",
+		"verify:assets": "bun scripts/verify-marketing-assets.ts",
 		"test": "bun run test:unit",
 		"test:unit": "bun test src"
 	},

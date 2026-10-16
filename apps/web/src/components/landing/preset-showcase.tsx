@@ -2,6 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { CAPINSTA_CAPTION_PRESETS } from "@/capinsta/styles/presetRegistry";
 import { ROUTES } from "@/site/brand";
+import creatorLandscape from "../../../public/marketing/creator-landscape.webp";
+import creatorSquare from "../../../public/marketing/creator-square.webp";
+import creatorVertical from "../../../public/marketing/creator-vertical.webp";
 
 const FEATURED_IDS = [
 	"word_highlight_box",
@@ -15,7 +18,9 @@ const FEATURED_IDS = [
 
 export function getPublicPresetOrder() {
 	const featured = FEATURED_IDS.flatMap((id) => {
-		const preset = CAPINSTA_CAPTION_PRESETS.find((candidate) => candidate.id === id);
+		const preset = CAPINSTA_CAPTION_PRESETS.find(
+			(candidate) => candidate.id === id,
+		);
 		return preset ? [preset] : [];
 	});
 	const featuredSet = new Set(FEATURED_IDS);
@@ -27,18 +32,24 @@ export function getPublicPresetOrder() {
 	];
 }
 
-const posters = [
-	"/marketing/creator-square.webp",
-	"/marketing/creator-landscape.webp",
-	"/marketing/creator-vertical.webp",
-];
+const posters = [creatorSquare, creatorLandscape, creatorVertical];
 
-const previewWords = ["Make it pop", "Watch this", "Cinematic", "Smooth motion", "BIG ENERGY", "Editorial"];
+const previewWords = [
+	"Make it pop",
+	"Watch this",
+	"Cinematic",
+	"Smooth motion",
+	"BIG ENERGY",
+	"Editorial",
+];
 
 export function PresetShowcase({ compact = false }: { compact?: boolean }) {
 	const presets = getPublicPresetOrder();
 	return (
-		<section id="caption-styles" className="overflow-hidden border-y-2 border-border bg-[var(--card-dark,var(--neo-black))] text-[#F7F3EA]">
+		<section
+			id="caption-styles"
+			className="overflow-hidden border-y-2 border-border bg-[var(--card-dark,var(--neo-black))] text-[#F7F3EA]"
+		>
 			<div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
 				<div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
 					<div>
@@ -59,13 +70,10 @@ export function PresetShowcase({ compact = false }: { compact?: boolean }) {
 					)}
 				</div>
 
-				<div className="mt-12 grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-6">
+				<div className="mt-12 grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4">
 					{presets.map((preset, index) => (
-						<article
-							key={preset.id}
-							className={`group ${index % 2 ? "lg:translate-y-8" : ""}`}
-						>
-							<div className="relative aspect-square overflow-hidden border-2 border-foreground bg-background shadow-[4px_4px_0_var(--cap-shadow-color)] transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5">
+						<article key={preset.id} className="group">
+							<div className="relative aspect-square overflow-hidden border-2 border-foreground bg-background shadow-[4px_4px_0_var(--cap-shadow-color)]">
 								<Image
 									src={posters[index % posters.length]}
 									alt={`${preset.name} caption preset preview`}

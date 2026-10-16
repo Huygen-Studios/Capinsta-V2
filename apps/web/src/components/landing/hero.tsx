@@ -2,6 +2,9 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ROUTES } from "@/site/brand";
+import creatorLandscape from "../../../public/marketing/creator-landscape.webp";
+import creatorSquare from "../../../public/marketing/creator-square.webp";
+import creatorVertical from "../../../public/marketing/creator-vertical.webp";
 import {
 	CreatorMediaCard,
 	type MarketingMediaDefinition,
@@ -9,7 +12,7 @@ import {
 
 const media: MarketingMediaDefinition[] = [
 	{
-		poster: "/marketing/creator-vertical.webp",
+		poster: creatorVertical,
 		webm: "/marketing/samples/tenglish-preset-sample.webm",
 		alt: "Creator recording a vertical video in a colorful studio",
 		aspectRatio: "9/16",
@@ -17,7 +20,7 @@ const media: MarketingMediaDefinition[] = [
 		accent: "lime",
 	},
 	{
-		poster: "/marketing/creator-landscape.webp",
+		poster: creatorLandscape,
 		webm: "/marketing/samples/editorial-effect-preset-sample.webm",
 		alt: "Two video creators reviewing an edit together",
 		aspectRatio: "16/9",
@@ -25,7 +28,7 @@ const media: MarketingMediaDefinition[] = [
 		accent: "blue",
 	},
 	{
-		poster: "/marketing/creator-square.webp",
+		poster: creatorSquare,
 		webm: "/marketing/samples/music-sample.webm",
 		alt: "Creator speaking to camera in a home studio",
 		aspectRatio: "1/1",
@@ -33,7 +36,7 @@ const media: MarketingMediaDefinition[] = [
 		accent: "pink",
 	},
 	{
-		poster: "/marketing/creator-vertical.webp",
+		poster: creatorVertical,
 		webm: "/marketing/samples/mr-beast-style-sample.webm",
 		alt: "Vertical creator video with animated caption styling",
 		aspectRatio: "9/16",

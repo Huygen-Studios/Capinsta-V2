@@ -7,6 +7,7 @@ import {
 	roundFrameTime,
 	ZERO_MEDIA_TIME,
 } from "@/wasm";
+import { markPlayback, measurePlayback } from "@/core/playback-performance";
 
 export class PlaybackManager {
 	private isPlaying = false;
@@ -59,14 +60,24 @@ export class PlaybackManager {
 		}
 
 		const requestId = ++this.playRequestId;
+		markPlayback("play-request");
 		this.isPreparing = true;
 		this.notify();
 		if (this.beforePlay) {
 			try {
+				markPlayback("audio-prepare-start");
 				await this.beforePlay(this.currentTime);
+				measurePlayback(
+					"audio-preparation",
+					"audio-prepare-start",
+					"audio-prepare-end",
+				);
 			} catch (error) {
 				if (process.env.NEXT_PUBLIC_CAPINSTA_DEBUG === "true") {
-					console.warn("[transport] Audio preparation failed; using monotonic clock", error);
+					console.warn(
+						"[transport] Audio preparation failed; using monotonic clock",
+						error,
+					);
 				}
 			}
 		}
@@ -77,6 +88,7 @@ export class PlaybackManager {
 		}
 		this.isPlaying = true;
 		this.startTimer();
+		measurePlayback("play-to-transport", "play-request", "transport-playing");
 		this.notify();
 	}
 
@@ -85,7 +97,8 @@ export class PlaybackManager {
 		this.isPreparing = false;
 		if (this.isPlaying) {
 			const clockTime = this.masterClock?.() ?? null;
-			if (clockTime !== null) this.currentTime = this.clampTimeToTimeline(clockTime);
+			if (clockTime !== null)
+				this.currentTime = this.clampTimeToTimeline(clockTime);
 		}
 		this.isPlaying = false;
 		this.stopTimer();
@@ -104,7 +117,7 @@ export class PlaybackManager {
 	}
 
 	toggle(): void {
-		if (this.isPlaying) {
+		if (this.isPlaying || this.isPreparing) {
 			this.pause();
 		} else {
 			this.play();
@@ -112,6 +125,10 @@ export class PlaybackManager {
 	}
 
 	seek({ time }: { time: MediaTime }): void {
+		if (this.isPreparing) {
+			this.playRequestId += 1;
+			this.isPreparing = false;
+		}
 		this.currentTime = this.clampTimeToTimeline(time);
 		if (this.isPlaying) {
 			this.playbackStartWallTime = performance.now();
@@ -262,7 +279,8 @@ export class PlaybackManager {
 
 		const fps = this.editor.project.getActive()?.settings.fps;
 		const clockTime = this.masterClock?.() ?? null;
-		const elapsedSeconds = (performance.now() - this.playbackStartWallTime) / 1000;
+		const elapsedSeconds =
+			(performance.now() - this.playbackStartWallTime) / 1000;
 		const rawTime =
 			clockTime ??
 			addMediaTime({
@@ -276,9 +294,9 @@ export class PlaybackManager {
 			this.pause();
 			this.currentTime = maxTime;
 			this.notify();
-		this.notifySeek(maxTime);
-		this.dispatchSeekEvent(maxTime);
-		return;
+			this.notifySeek(maxTime);
+			this.dispatchSeekEvent(maxTime);
+			return;
 		}
 
 		this.currentTime = newTime;

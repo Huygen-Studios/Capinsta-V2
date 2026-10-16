@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "./ui/button";
 import { LogoStatic } from "./logo";
@@ -19,7 +19,21 @@ const NAV_LINKS = [
 
 export function Header() {
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
+	const menuButtonRef = useRef<HTMLButtonElement>(null);
+	const firstMobileLinkRef = useRef<HTMLAnchorElement>(null);
 	const closeMenu = () => setIsMenuOpen(false);
+
+	useEffect(() => {
+		if (!isMenuOpen) return;
+		firstMobileLinkRef.current?.focus();
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			setIsMenuOpen(false);
+			menuButtonRef.current?.focus();
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [isMenuOpen]);
 
 	return (
 		<header className="marketing-header sticky top-0 z-50 border-b-2">
@@ -29,7 +43,7 @@ export function Header() {
 					<Link
 						href={ROUTES.home}
 						aria-label={`${BRAND.productName} home`}
-						className="flex items-center gap-2.5"
+						className="cap-focus flex items-center gap-2.5 rounded-sm"
 					>
 						<LogoStatic
 							variant="wordmark"
@@ -43,7 +57,7 @@ export function Header() {
 							<Link
 								key={link.href}
 								href={link.href}
-								className="text-muted-foreground hover:text-foreground rounded-md px-3 py-2 text-sm font-medium transition-colors"
+								className="cap-focus text-muted-foreground hover:text-foreground rounded-md px-3 py-2 text-sm font-medium transition-colors"
 							>
 								{link.label}
 							</Link>
@@ -63,11 +77,14 @@ export function Header() {
 					<ThemeToggle />
 					{/* Mobile hamburger */}
 					<Button
+						ref={menuButtonRef}
 						variant="ghost"
 						size="icon"
 						className="lg:hidden"
 						onClick={() => setIsMenuOpen(!isMenuOpen)}
 						aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+						aria-expanded={isMenuOpen}
+						aria-controls="mobile-navigation"
 					>
 						{isMenuOpen ? (
 							<HugeiconsIcon icon={Cancel01Icon} size={22} />
@@ -80,14 +97,18 @@ export function Header() {
 
 			{/* Mobile nav overlay */}
 			{isMenuOpen && (
-				<div className="border-t border-border bg-background lg:hidden">
+				<div
+					id="mobile-navigation"
+					className="border-t border-border bg-background lg:hidden"
+				>
 					<nav className="mx-auto max-w-7xl flex flex-col gap-1 px-4 py-4">
-						{NAV_LINKS.map((link) => (
+						{NAV_LINKS.map((link, index) => (
 							<Link
+								ref={index === 0 ? firstMobileLinkRef : undefined}
 								key={link.href}
 								href={link.href}
 								onClick={closeMenu}
-								className="text-muted-foreground hover:text-foreground rounded-md px-3 py-2.5 text-base font-medium transition-colors"
+								className="cap-focus text-muted-foreground hover:text-foreground rounded-md px-3 py-2.5 text-base font-medium transition-colors"
 							>
 								{link.label}
 							</Link>

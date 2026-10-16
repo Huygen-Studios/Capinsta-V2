@@ -7,21 +7,32 @@ import {
 	hasAnimatedVolume,
 } from "@/timeline/audio-state";
 import { createAudioMasteringChain } from "@/media/audio-mastering";
-import {
-	renderRetimedBuffer,
-} from "@/retime";
-import {
-	ALL_FORMATS,
-	AudioBufferSink,
-	BlobSource,
-	Input,
-} from "mediabunny";
+import { renderRetimedBuffer } from "@/retime";
+import { ALL_FORMATS, AudioBufferSink, BlobSource, Input } from "mediabunny";
 import { updatePreviewSyncDiagnostics } from "@/preview/sync-diagnostics";
+import { markPlayback, measurePlayback } from "@/core/playback-performance";
 
 export interface ContinuousClipSchedule {
 	effectiveStartTime: number;
 	contextStartTime: number;
 	bufferOffset: number;
+}
+
+export function selectBlockingAudioClips({
+	clips,
+	time,
+	leadSeconds,
+}: {
+	clips: AudioClipSource[];
+	time: number;
+	leadSeconds: number;
+}): AudioClipSource[] {
+	return clips.filter(
+		(clip) =>
+			!clip.muted &&
+			clip.startTime + clip.duration > time &&
+			clip.startTime <= time + leadSeconds,
+	);
 }
 
 /**
@@ -83,18 +94,24 @@ export class AudioManager {
 	private cacheAccess = new Map<string, number>();
 	private playbackSessionId = 0;
 	private lastIsPlaying = false;
+	private lastIsPreparing = false;
 	private lastVolume = 1;
 	private preparedForPlay = false;
+	private clipsDirty = true;
+	private prewarmGeneration = 0;
+	private timelineChangeTimer: ReturnType<typeof setTimeout> | null = null;
+	private mediaSignature = "";
 	private unsubscribers: Array<() => void> = [];
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
+		this.mediaSignature = this.getMediaSignature();
 
 		this.unsubscribers.push(
 			this.editor.playback.onBeforePlay(this.prepareForPlay),
 			this.editor.playback.subscribe(this.handlePlaybackChange),
 			this.editor.timeline.subscribe(this.handleTimelineChange),
-			this.editor.media.subscribe(this.handleTimelineChange),
+			this.editor.media.subscribe(this.handleMediaChange),
 			this.editor.playback.onSeek(this.handleSeek),
 		);
 		this.editor.playback.setMasterClock(this.getMasterClockTime);
@@ -107,6 +124,8 @@ export class AudioManager {
 			unsub();
 		}
 		this.unsubscribers = [];
+		if (this.timelineChangeTimer) clearTimeout(this.timelineChangeTimer);
+		this.timelineChangeTimer = null;
 		this.activeClipIds.clear();
 		this.preparedClipBuffers.clear();
 		this.decodedBuffers.clear();
@@ -122,6 +141,7 @@ export class AudioManager {
 
 	private handlePlaybackChange = (): void => {
 		const isPlaying = this.editor.playback.getIsPlaying();
+		const isPreparing = this.editor.playback.getIsPreparing();
 		const volume = this.editor.playback.getVolume();
 
 		if (volume !== this.lastVolume) {
@@ -144,6 +164,11 @@ export class AudioManager {
 				this.stopPlayback();
 			}
 		}
+
+		if (this.lastIsPreparing && !isPreparing && !isPlaying) {
+			this.stopPlayback();
+		}
+		this.lastIsPreparing = isPreparing;
 	};
 
 	private getMasterClockTime = (): MediaTime | null => {
@@ -186,24 +211,94 @@ export class AudioManager {
 	};
 
 	private handleTimelineChange = (): void => {
+		this.clipsDirty = true;
+		const generation = ++this.prewarmGeneration;
+		if (this.timelineChangeTimer) clearTimeout(this.timelineChangeTimer);
+		this.timelineChangeTimer = setTimeout(() => {
+			this.timelineChangeTimer = null;
+			void this.reconcileTimelineAudio(generation);
+		}, 100);
+	};
+
+	private async reconcileTimelineAudio(generation: number): Promise<void> {
+		const previousSignature = this.getAudioClipSignature(this.clips);
+		const clips = await collectAudioClips({
+			tracks: this.editor.scenes.getActiveScene().tracks,
+			mediaAssets: this.editor.media.getAssets(),
+		});
+		if (generation !== this.prewarmGeneration) return;
+		this.clips = clips;
+		this.clipsDirty = false;
+		const audioChanged =
+			previousSignature !== this.getAudioClipSignature(clips);
+		if (audioChanged && this.editor.playback.getIsPlaying()) {
+			void this.startPlayback({
+				time: this.editor.playback.getCurrentTime() / TICKS_PER_SECOND,
+			});
+			return;
+		}
+		if (!this.editor.playback.getIsPlaying()) {
+			void this.prewarmCurrentWindow();
+		}
+	}
+
+	private getAudioClipSignature(clips: AudioClipSource[]): string {
+		return JSON.stringify(
+			clips.map((clip) => ({
+				id: clip.id,
+				sourceKey: clip.sourceKey,
+				startTime: clip.startTime,
+				duration: clip.duration,
+				trimStart: clip.trimStart,
+				trimEnd: clip.trimEnd,
+				volume: clip.volume,
+				muted: clip.muted,
+				retime: clip.retime ?? null,
+				timelineElement: clip.timelineElement,
+			})),
+		);
+	}
+
+	private handleMediaChange = (): void => {
+		const mediaSignature = this.getMediaSignature();
+		if (mediaSignature === this.mediaSignature) return;
+		this.mediaSignature = mediaSignature;
 		this.activeClipIds.clear();
+		this.clipsDirty = true;
+		this.prewarmGeneration += 1;
+		if (this.timelineChangeTimer) clearTimeout(this.timelineChangeTimer);
+		this.timelineChangeTimer = null;
 		this.preparedClipBuffers.clear();
 		this.decodedBuffers.clear();
 		this.decodedBufferBytes.clear();
 		this.preparedBufferBytes.clear();
 		this.cacheAccess.clear();
+		this.publishCacheBytes();
 
-		if (!this.editor.playback.getIsPlaying()) return;
-
-		void this.startPlayback({
-			time: this.editor.playback.getCurrentTime() / TICKS_PER_SECOND,
-		});
+		if (this.editor.playback.getIsPlaying()) {
+			void this.startPlayback({
+				time: this.editor.playback.getCurrentTime() / TICKS_PER_SECOND,
+			});
+		}
 	};
+
+	private getMediaSignature(): string {
+		return JSON.stringify(
+			this.editor.media.getAssets().map((asset) => ({
+				id: asset.id,
+				type: asset.type,
+				name: asset.file.name,
+				size: asset.file.size,
+				lastModified: asset.file.lastModified,
+			})),
+		);
+	}
 
 	private ensureAudioContext(): AudioContext | null {
 		if (this.audioContext) return this.audioContext;
 		if (typeof window === "undefined") return null;
 
+		markPlayback("audio-context-init-start");
 		this.audioContext = createAudioContext();
 		const { input } = createAudioMasteringChain({
 			audioContext: this.audioContext,
@@ -211,6 +306,11 @@ export class AudioManager {
 		});
 		this.masterGain = input;
 		this.masterGain.gain.value = this.lastVolume;
+		measurePlayback(
+			"audio-context-initialization",
+			"audio-context-init-start",
+			"audio-context-init-end",
+		);
 		return this.audioContext;
 	}
 
@@ -235,9 +335,6 @@ export class AudioManager {
 		time: number;
 		preparing?: boolean;
 	}): Promise<void> {
-		const audioContext = this.ensureAudioContext();
-		if (!audioContext) return;
-
 		this.stopPlayback();
 		const sessionId = ++this.playbackSessionId;
 
@@ -247,19 +344,51 @@ export class AudioManager {
 
 		if (duration <= 0) return;
 
-		if (audioContext.state === "suspended") {
-			await audioContext.resume();
+		if (this.clipsDirty) {
+			markPlayback("audio-clip-collection-start");
+			const clips = await collectAudioClips({ tracks, mediaAssets });
+			measurePlayback(
+				"audio-clip-collection",
+				"audio-clip-collection-start",
+				"audio-clip-collection-end",
+			);
+			if (sessionId !== this.playbackSessionId) return;
+			this.clips = clips;
+			this.clipsDirty = false;
 		}
-		this.clips = await collectAudioClips({ tracks, mediaAssets });
+		if (sessionId !== this.playbackSessionId) return;
+		if (!this.clips.some((clip) => !clip.muted)) {
+			this.preparedForPlay = false;
+			return;
+		}
+
+		const audioContext = this.ensureAudioContext();
+		if (!audioContext) return;
+
+		if (audioContext.state === "suspended") {
+			markPlayback("audio-context-resume-start");
+			await audioContext.resume();
+			measurePlayback(
+				"audio-context-resume",
+				"audio-context-resume-start",
+				"audio-context-resume-end",
+			);
+		}
 		if (!this.editor.playback.getIsPlaying() && !preparing) return;
-		const audible = this.clips.filter(
-			(clip) =>
-				!clip.muted &&
-				clip.startTime + clip.duration > time &&
-				clip.startTime <= time + this.lookaheadSeconds,
+		const blocking = selectBlockingAudioClips({
+			clips: this.clips,
+			time,
+			leadSeconds: AudioManager.SCHEDULE_LEAD_SECONDS,
+		});
+		markPlayback("audio-decode-start");
+		await Promise.all(
+			blocking.map((clip) => this.getPreparedClipBuffer({ clip })),
 		);
-		for (const clip of audible) this.activeClipIds.add(clip.id);
-		await Promise.all(audible.map((clip) => this.getPreparedClipBuffer({ clip })));
+		measurePlayback(
+			"blocking-audio-decode",
+			"audio-decode-start",
+			"audio-decode-end",
+		);
 		if (sessionId !== this.playbackSessionId) return;
 
 		this.playbackStartTime = time;
@@ -273,7 +402,9 @@ export class AudioManager {
 			audioDroppedBufferCount: 0,
 		});
 		this.preparedForPlay = preparing;
-		for (const clip of audible) {
+		markPlayback("audio-scheduling-start");
+		for (const clip of blocking) {
+			this.activeClipIds.add(clip.id);
 			await this.schedulePreparedClip({
 				clip,
 				startTime: time,
@@ -281,8 +412,37 @@ export class AudioManager {
 				allowBeforePlay: preparing,
 			});
 		}
+		measurePlayback(
+			"audio-scheduling",
+			"audio-scheduling-start",
+			"audio-scheduling-end",
+		);
 
 		if (!preparing) this.startScheduling();
+	}
+
+	private async prewarmCurrentWindow(): Promise<void> {
+		if (!this.audioContext || this.editor.playback.getIsPlaying()) return;
+		const generation = this.prewarmGeneration;
+		const tracks = this.editor.scenes.getActiveScene().tracks;
+		const mediaAssets = this.editor.media.getAssets();
+		const time = this.editor.playback.getCurrentTime() / TICKS_PER_SECOND;
+		if (this.clipsDirty) {
+			const clips = await collectAudioClips({ tracks, mediaAssets });
+			if (generation !== this.prewarmGeneration) return;
+			this.clips = clips;
+			this.clipsDirty = false;
+		}
+		if (generation !== this.prewarmGeneration) return;
+		const nearby = this.clips.filter(
+			(clip) =>
+				!clip.muted &&
+				clip.startTime + clip.duration > time &&
+				clip.startTime <= time + this.lookaheadSeconds,
+		);
+		await Promise.all(
+			nearby.map((clip) => this.getPreparedClipBuffer({ clip })),
+		);
 	}
 
 	private startScheduling(): void {
@@ -355,7 +515,8 @@ export class AudioManager {
 		if (!audioContext) return;
 
 		const buffer = await this.getPreparedClipBuffer({ clip });
-		if (!buffer || (!allowBeforePlay && !this.editor.playback.getIsPlaying())) return;
+		if (!buffer || (!allowBeforePlay && !this.editor.playback.getIsPlaying()))
+			return;
 		if (sessionId !== this.playbackSessionId) return;
 
 		const clipStart = clip.startTime;
@@ -396,7 +557,9 @@ export class AudioManager {
 			node.disconnect();
 			clipGain.disconnect();
 			this.queuedSources.delete(node);
-			updatePreviewSyncDiagnostics({ activeSourceCount: this.queuedSources.size });
+			updatePreviewSyncDiagnostics({
+				activeSourceCount: this.queuedSources.size,
+			});
 		});
 	}
 
@@ -497,7 +660,9 @@ export class AudioManager {
 			if (!buffer) return;
 			this.preparedBufferBytes.set(
 				cacheKey,
-				buffer.length * buffer.numberOfChannels * Float32Array.BYTES_PER_ELEMENT,
+				buffer.length *
+					buffer.numberOfChannels *
+					Float32Array.BYTES_PER_ELEMENT,
 			);
 			this.cacheAccess.set(`prepared:${cacheKey}`, performance.now());
 			this.evictAudioCache();
@@ -523,7 +688,9 @@ export class AudioManager {
 			if (!buffer) return;
 			this.decodedBufferBytes.set(
 				clip.sourceKey,
-				buffer.length * buffer.numberOfChannels * Float32Array.BYTES_PER_ELEMENT,
+				buffer.length *
+					buffer.numberOfChannels *
+					Float32Array.BYTES_PER_ELEMENT,
 			);
 			this.cacheAccess.set(`decoded:${clip.sourceKey}`, performance.now());
 			this.evictAudioCache();
@@ -545,11 +712,10 @@ export class AudioManager {
 	}
 
 	private evictAudioCache(): void {
-		let total =
-			[...this.decodedBufferBytes.values(), ...this.preparedBufferBytes.values()].reduce(
-				(sum, bytes) => sum + bytes,
-				0,
-			);
+		let total = [
+			...this.decodedBufferBytes.values(),
+			...this.preparedBufferBytes.values(),
+		].reduce((sum, bytes) => sum + bytes, 0);
 		if (total <= AudioManager.MAX_AUDIO_CACHE_BYTES) return;
 
 		const protectedSources = new Set(
@@ -667,5 +833,4 @@ export class AudioManager {
 			input.dispose();
 		}
 	}
-
 }

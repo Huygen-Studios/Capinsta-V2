@@ -36,6 +36,7 @@ import {
 	isPreviewQuality,
 } from "@/preview/preview-store";
 import { roundMediaTime, ZERO_MEDIA_TIME, type MediaTime } from "@/wasm";
+import { markPlayback } from "@/core/playback-performance";
 
 export function PreviewToolbar({
 	onToggleFullscreen,
@@ -135,7 +136,10 @@ function PreviewScrubBar() {
 		(clientX: number) => {
 			const rect = trackRef.current?.getBoundingClientRect();
 			if (!rect || rect.width <= 0 || totalDuration <= 0) return;
-			const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+			const ratio = Math.min(
+				1,
+				Math.max(0, (clientX - rect.left) / rect.width),
+			);
 			editor.playback.seek({
 				time: roundMediaTime({ time: totalDuration * ratio }),
 			});
@@ -146,11 +150,20 @@ function PreviewScrubBar() {
 	const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
 		if (event.button !== 0) return;
 		event.currentTarget.setPointerCapture(event.pointerId);
+		editor.playback.setScrubbing({ isScrubbing: true });
 		seekFromClientX(event.clientX);
 	};
 
 	const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
 		if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+		seekFromClientX(event.clientX);
+	};
+
+	const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+		if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+			event.currentTarget.releasePointerCapture(event.pointerId);
+		}
+		editor.playback.setScrubbing({ isScrubbing: false });
 		seekFromClientX(event.clientX);
 	};
 
@@ -193,6 +206,8 @@ function PreviewScrubBar() {
 			className="group relative h-3 cursor-pointer rounded-sm outline-none"
 			onPointerDown={handlePointerDown}
 			onPointerMove={handlePointerMove}
+			onPointerUp={handlePointerUp}
+			onPointerCancel={handlePointerUp}
 			onKeyDown={handleKeyDown}
 		>
 			<div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-sm border border-border bg-muted" />
@@ -365,9 +380,17 @@ function PlayPauseButton() {
 		<Button
 			variant="text"
 			size="icon"
-			aria-label={showPreparing ? "Preparing audio" : isPlaying ? "Pause" : "Play"}
-			disabled={isPreparing}
-			onClick={() => invokeAction("toggle-play")}
+			aria-label={
+				showPreparing
+					? "Cancel playback preparation"
+					: isPlaying
+						? "Pause"
+						: "Play"
+			}
+			onClick={() => {
+				markPlayback("play-click");
+				invokeAction("toggle-play");
+			}}
 		>
 			{showPreparing ? (
 				<Loader2 className="size-4 animate-spin" />
