@@ -314,7 +314,7 @@ describe("Capinsta style foundation", () => {
 
 	test("Pair Font Lockup exposes two bundled font families", () => {
 		const pair = getCapinstaPresetStyle("pair_font_lockup");
-		expect(pair.lockup.bigFontFamily).toBe("Losta Masta");
+		expect(pair.lockup.bigFontFamily).toBe("Roundhand");
 		expect(pair.lockup.smallFontFamily).toBe("Poppins");
 		expect(pair.activeWord.color).toBe("#FFD43B");
 	});

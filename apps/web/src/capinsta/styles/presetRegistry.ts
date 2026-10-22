@@ -604,7 +604,7 @@ export const CAPINSTA_CAPTION_PRESETS: CapinstaPresetDefinition[] = [
 		patch: sourcePresetPatch({
 			source: {
 				fontFamily: "Poppins",
-				bigFontFamily: "Losta Masta",
+				bigFontFamily: "Roundhand",
 				smallFontFamily: "Poppins",
 				fontSize: 100,
 				fontWeight: 900,
@@ -629,7 +629,7 @@ export const CAPINSTA_CAPTION_PRESETS: CapinstaPresetDefinition[] = [
 				smallFontSizePx: 104,
 				layoutMode: "center_anchor",
 				layoutSafeMarginPercent: 8,
-				collisionPadding: 18,
+				collisionPadding: 8,
 				tightness: 0.8,
 				hardCutReveal: false,
 			},

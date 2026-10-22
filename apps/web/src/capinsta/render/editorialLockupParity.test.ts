@@ -107,7 +107,7 @@ describe("Editorial Lockup canonical layout", () => {
 		});
 		const frame = buildEditorialLockupLayout(words, caption, config, safeLayout, canvas, 1);
 		expect(frame.placements.map((placement) => placement.fontFamily)).toEqual([
-			'"Losta Masta"', '"Poppins"', '"Losta Masta"', '"Poppins"',
+			'"Roundhand"', '"Poppins"', '"Roundhand"', '"Poppins"',
 		]);
 		expectNoEditorialOverlap(frame.placements, frame.collisionPadding);
 	});

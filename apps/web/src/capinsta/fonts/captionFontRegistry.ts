@@ -97,6 +97,17 @@ export const CAPINSTA_FONT_REGISTRY: readonly CapinstaFontDefinition[] = [
 		],
 	},
 	{
+		id: "roundhand",
+		label: "Roundhand",
+		cssFamily: "Roundhand",
+		exportFamily: "Roundhand",
+		faces: [
+			face("Roundhand/Roundhand Regular.ttf", 400),
+			face("Roundhand/Roundhand Bold.ttf", 700),
+			face("Roundhand/Roundhand Bold.ttf", 900),
+		],
+	},
+	{
 		id: "made-avenue",
 		label: "Made Avenue",
 		cssFamily: "Made Avenue",

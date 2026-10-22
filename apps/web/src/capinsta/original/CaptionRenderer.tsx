@@ -698,12 +698,18 @@ function estimateWordBox(word: string, fontSize: number, fontFamily: string, con
   const effectiveFontSize = fontSize * wordScale;
   const context = getEditorialMeasureContext();
   if (context) context.font = `${Number(config.fontWeight) || 900} ${effectiveFontSize}px ${fontFamily}`;
-  const measuredWidth = context?.measureText(token).width;
+  const metrics = context?.measureText(token);
+  const measuredWidth = metrics
+    ? Math.max(metrics.width, (metrics.actualBoundingBoxLeft ?? 0) + (metrics.actualBoundingBoxRight ?? 0))
+    : 0;
   const fallbackFactor = Number(config.fontWeight) >= 800 ? 0.72 : 0.66;
+  const letterSpacingWidth = Math.max(0, charCount - 1) * config.letterSpacing;
+  const fallbackWidth = charCount * effectiveFontSize * fallbackFactor + letterSpacingWidth;
   const width = Math.max(
-    effectiveFontSize * 0.78,
-    measuredWidth && Number.isFinite(measuredWidth) ? measuredWidth * 1.1 : 0,
-    charCount * effectiveFontSize * fallbackFactor + Math.max(0, charCount - 1) * config.letterSpacing
+    effectiveFontSize * 0.3,
+    measuredWidth && Number.isFinite(measuredWidth)
+      ? measuredWidth * 1.06 + letterSpacingWidth
+      : fallbackWidth
   );
   const height = Math.max(effectiveFontSize * 1.08, effectiveFontSize * clamp(config.lineHeight, 0.9, 1.25));
   return { width, height };
