@@ -66,7 +66,11 @@ describe("Editorial Lockup canonical layout", () => {
 			words,
 		};
 		const config = normalizeModernMinimalistStyleConfig(
-			toOriginalCaptionStyleConfig({ style: getCapinstaPresetStyle("modern_minimalist_lockup") }),
+			{
+				...toOriginalCaptionStyleConfig({ style: getCapinstaPresetStyle("modern_minimalist_lockup") }),
+				bigFontFamily: "Roundhand",
+				smallFontFamily: "Poppins",
+			},
 		);
 		const safeLayout = resolveSafeCaptionLayout(config, {
 			canvas,
@@ -76,6 +80,9 @@ describe("Editorial Lockup canonical layout", () => {
 			safety,
 		});
 		const frame = buildEditorialLockupLayout(words, caption, config, safeLayout, canvas, 1);
+		expect([...new Set(frame.placements.map((placement) => placement.fontFamily))]).toEqual([
+			'"Montserrat"',
+		]);
 		expectNoEditorialOverlap(frame.placements, frame.collisionPadding);
 	});
 

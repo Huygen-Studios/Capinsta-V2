@@ -152,10 +152,7 @@ export function CapinstaCaptionStylePanel(
 	}, [editor.playback]);
 
 	if (!style) return null;
-	const usesHierarchyLayout =
-		style.presetId === "modern_minimalist_lockup" ||
-		style.presetId === "pair_font_lockup" ||
-		style.presetId === "focus_hierarchy";
+	const usesDualFontLayout = style.presetId === "pair_font_lockup";
 
 	function replaceRecord(nextRecord: CapinstaCaptionDocumentRecord) {
 		if (!binding || !singleTrackId) return;
@@ -467,7 +464,7 @@ export function CapinstaCaptionStylePanel(
 						))}
 					</select>
 				</label>
-				{usesHierarchyLayout ? (
+				{usesDualFontLayout ? (
 					<>
 						<label className="grid gap-1 text-xs">
 							<span className="text-muted-foreground">Highlight font</span>

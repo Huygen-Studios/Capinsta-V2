@@ -772,7 +772,7 @@ function buildOrderedStackLayout(
   smallFontSize: number,
   collisionPadding: number,
   mode: ResolvedBuildLayoutMode,
-  pairFonts: boolean
+  fontMode: "single" | "alternating"
 ) {
   const centerY = (bounds.top + bounds.bottom) / 2;
   const availableWidth = Math.max(1, bounds.right - bounds.left);
@@ -785,11 +785,9 @@ function buildOrderedStackLayout(
       const isAnchor = index === anchorIndex;
       const fontSize = (isAnchor ? bigFontSize : smallFontSize) * globalScale;
       const fontFamily = resolveFontFamily(
-        pairFonts
+        fontMode === "alternating"
           ? (index % 2 === 0 ? config.bigFontFamily : config.smallFontFamily) || config.fontFamily
-          : isAnchor
-            ? config.bigFontFamily || config.fontFamily
-            : config.smallFontFamily || config.fontFamily
+          : config.fontFamily
       );
       const size = estimateWordBox(word.word, fontSize, fontFamily, config);
       return { index, isAnchor, fontSize, fontFamily, ...size };
@@ -897,6 +895,8 @@ export function buildEditorialLockupLayout(
     collisionPadding,
     mode,
     activeCaption.theme === "pair_font_lockup"
+      ? "alternating"
+      : "single"
   );
 
   return {
