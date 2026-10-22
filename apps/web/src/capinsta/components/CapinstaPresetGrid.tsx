@@ -41,6 +41,7 @@ function PresetButton({
 		viewport: { width: 240, height: 135 },
 	});
 	const isFocusHierarchy = preset.id === "focus_hierarchy";
+	const isPairFont = preset.id === "pair_font_lockup";
 	return (
 		<button
 			type="button"
@@ -67,14 +68,14 @@ function PresetButton({
 								: undefined,
 					}}
 				>
-					<span style={isFocusHierarchy ? {
-						fontFamily: CAPINSTA_FONT_STACKS[preset.style.lockup.smallFontFamily],
-					} : undefined}>read</span>{" "}
-					<span style={isFocusHierarchy ? {
+					<span style={isFocusHierarchy || isPairFont ? {
+						fontFamily: CAPINSTA_FONT_STACKS[isPairFont ? preset.style.lockup.bigFontFamily : preset.style.lockup.smallFontFamily],
+					} : undefined}>{isPairFont ? "PAIR" : "read"}</span>{" "}
+					<span style={isFocusHierarchy || isPairFont ? {
 						...preview.activeWordStyle,
-						fontFamily: CAPINSTA_FONT_STACKS[preset.style.lockup.bigFontFamily],
+						fontFamily: CAPINSTA_FONT_STACKS[isPairFont ? preset.style.lockup.smallFontFamily : preset.style.lockup.bigFontFamily],
 						fontSize: 18,
-					} : preview.activeWordStyle}>{isFocusHierarchy ? "FOCUS" : "style"}</span>
+					} : preview.activeWordStyle}>{isFocusHierarchy ? "FOCUS" : isPairFont ? "TYPE" : "style"}</span>
 				</span>
 			</div>
 			<div className="font-medium">{preset.name}</div>

@@ -244,6 +244,7 @@ describe("Capinsta style foundation", () => {
 			"kinetic_fade",
 			"mrbeast_style",
 			"modern_minimalist_lockup",
+			"pair_font_lockup",
 			"focus_hierarchy",
 			"dynamic_punch",
 		]);
@@ -251,7 +252,7 @@ describe("Capinsta style foundation", () => {
 
 	test("six preset values match the extracted original Capinsta registry", () => {
 		for (const preset of CAPINSTA_CAPTION_PRESETS.filter(
-			(preset) => preset.id !== "dynamic_punch" && preset.id !== "focus_hierarchy",
+			(preset) => preset.id !== "dynamic_punch" && preset.id !== "focus_hierarchy" && preset.id !== "pair_font_lockup",
 		)) {
 			const expected = ORIGINAL_PRESET_EXPECTATIONS[preset.id]!;
 
@@ -309,6 +310,13 @@ describe("Capinsta style foundation", () => {
 		expect(focus.lockup.bigFontSizePx).toBeGreaterThan(focus.lockup.smallFontSizePx);
 		expect(focus.activeWord.color).toBe("#F4F800");
 		expect(focus.effects.smartHighlightEnabled).toBe(true);
+	});
+
+	test("Pair Font Lockup exposes two bundled font families", () => {
+		const pair = getCapinstaPresetStyle("pair_font_lockup");
+		expect(pair.lockup.bigFontFamily).toBe("Losta Masta");
+		expect(pair.lockup.smallFontFamily).toBe("Poppins");
+		expect(pair.activeWord.color).toBe("#FFD43B");
 	});
 
 	test("ports original fidelity fields that affect preset visuals", () => {

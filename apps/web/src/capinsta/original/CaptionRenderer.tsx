@@ -482,6 +482,7 @@ export type EditorialWordPlacement = {
   width: number;
   height: number;
   fontSize: number;
+  fontFamily: string;
   scale: number;
   role: BuildWordRole;
   isAnchor: boolean;
@@ -677,16 +678,34 @@ export function buildEditorialRevealWords(
   });
 }
 
-function estimateWordBox(word: string, fontSize: number, config: CaptionStyleConfig, wordScale = 1) {
+let editorialMeasureContext: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null | undefined;
+
+function getEditorialMeasureContext() {
+  if (editorialMeasureContext !== undefined) return editorialMeasureContext;
+  if (typeof OffscreenCanvas !== "undefined") {
+    editorialMeasureContext = new OffscreenCanvas(1, 1).getContext("2d");
+  } else if (typeof document !== "undefined") {
+    editorialMeasureContext = document.createElement("canvas").getContext("2d");
+  } else {
+    editorialMeasureContext = null;
+  }
+  return editorialMeasureContext;
+}
+
+function estimateWordBox(word: string, fontSize: number, fontFamily: string, config: CaptionStyleConfig, wordScale = 1) {
   const token = word.trim();
   const charCount = Math.max(1, token.length);
-  const factor = Number(config.fontWeight) >= 800 ? 0.64 : 0.58;
   const effectiveFontSize = fontSize * wordScale;
+  const context = getEditorialMeasureContext();
+  if (context) context.font = `${Number(config.fontWeight) || 900} ${effectiveFontSize}px ${fontFamily}`;
+  const measuredWidth = context?.measureText(token).width;
+  const fallbackFactor = Number(config.fontWeight) >= 800 ? 0.72 : 0.66;
   const width = Math.max(
     effectiveFontSize * 0.78,
-    charCount * effectiveFontSize * factor + Math.max(0, charCount - 1) * config.letterSpacing
+    measuredWidth && Number.isFinite(measuredWidth) ? measuredWidth * 1.1 : 0,
+    charCount * effectiveFontSize * fallbackFactor + Math.max(0, charCount - 1) * config.letterSpacing
   );
-  const height = Math.max(effectiveFontSize * 0.9, effectiveFontSize * clamp(config.lineHeight, 0.9, 1.25));
+  const height = Math.max(effectiveFontSize * 1.08, effectiveFontSize * clamp(config.lineHeight, 0.9, 1.25));
   return { width, height };
 }
 
@@ -717,10 +736,11 @@ function makeWordPlacement(
   x: number,
   y: number,
   role: BuildWordRole,
+  fontFamily: string,
   config: CaptionStyleConfig,
   wordScale = 1
 ): EditorialWordPlacement {
-  const size = estimateWordBox(word.word, fontSize, config, wordScale);
+  const size = estimateWordBox(word.word, fontSize, fontFamily, config, wordScale);
   return {
     id: `${index}:${word.start}:${word.word}`,
     index,
@@ -730,6 +750,7 @@ function makeWordPlacement(
     width: size.width,
     height: size.height,
     fontSize,
+    fontFamily,
     scale: wordScale,
     role,
     isAnchor: role === "anchor",
@@ -744,7 +765,8 @@ function buildOrderedStackLayout(
   bigFontSize: number,
   smallFontSize: number,
   collisionPadding: number,
-  mode: ResolvedBuildLayoutMode
+  mode: ResolvedBuildLayoutMode,
+  pairFonts: boolean
 ) {
   const centerY = (bounds.top + bounds.bottom) / 2;
   const availableWidth = Math.max(1, bounds.right - bounds.left);
@@ -756,8 +778,15 @@ function buildOrderedStackLayout(
     const items = words.map((word, index) => {
       const isAnchor = index === anchorIndex;
       const fontSize = (isAnchor ? bigFontSize : smallFontSize) * globalScale;
-      const size = estimateWordBox(word.word, fontSize, config);
-      return { index, isAnchor, fontSize, ...size };
+      const fontFamily = resolveFontFamily(
+        pairFonts
+          ? (index % 2 === 0 ? config.bigFontFamily : config.smallFontFamily) || config.fontFamily
+          : isAnchor
+            ? config.bigFontFamily || config.fontFamily
+            : config.smallFontFamily || config.fontFamily
+      );
+      const size = estimateWordBox(word.word, fontSize, fontFamily, config);
+      return { index, isAnchor, fontSize, fontFamily, ...size };
     });
 
     const rows: Array<{ items: typeof items; width: number; height: number }> = [];
@@ -809,6 +838,7 @@ function buildOrderedStackLayout(
         center.x,
         center.y,
         item.isAnchor ? "anchor" : "supporting",
+        item.fontFamily,
         config
       ));
       x += item.width + collisionPadding;
@@ -859,7 +889,8 @@ export function buildEditorialLockupLayout(
     configuredBigFontSize,
     configuredSmallFontSize,
     collisionPadding,
-    mode
+    mode,
+    activeCaption.theme === "pair_font_lockup"
   );
 
   return {
@@ -994,7 +1025,7 @@ function renderModernMinimalistLockup(
                 left: `${(placement.x / lockup.width) * 100}%`,
                 top: `${(placement.y / lockup.height) * 100}%`,
                 display: "inline-block",
-                fontFamily: resolveFontFamily(placement.isAnchor ? (config.bigFontFamily || config.fontFamily) : (config.smallFontFamily || config.fontFamily)),
+                fontFamily: placement.fontFamily,
                 fontSize: placement.fontSize,
                 fontWeight: Number(config.fontWeight) || 900,
                 color: isHighlighted ? config.activeWordColor : config.textColor,
@@ -1212,7 +1243,7 @@ export default function CaptionRenderer({
     return renderAppleCinematic(activeCaption, currentTime, fps, scale, styleConfig, canvasSize);
   }
 
-  if (activeCaption.theme === "modern_minimalist_lockup" || activeCaption.theme === "focus_hierarchy") {
+  if (activeCaption.theme === "modern_minimalist_lockup" || activeCaption.theme === "pair_font_lockup" || activeCaption.theme === "focus_hierarchy") {
     return renderModernMinimalistLockup(activeCaption, currentTime, fps, scale, styleConfig, canvasSize);
   }
 

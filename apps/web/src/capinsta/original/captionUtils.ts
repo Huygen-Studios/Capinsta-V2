@@ -845,6 +845,7 @@ const THEME_HIGHLIGHT_COLORS: Partial<Record<CaptionTheme, string>> = {
   mrbeast_style: "#FFFF00",
   apple_cinematic: "#FFFFFF",
   modern_minimalist_lockup: "#FFFFFF",
+  pair_font_lockup: "#FFD43B",
   viral_word_highlight: "#22f4b8",
   viral_shorts: "#FFD700",
   kalakar_fire: "#ff6b35",

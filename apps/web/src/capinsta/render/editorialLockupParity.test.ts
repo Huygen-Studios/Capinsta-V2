@@ -30,7 +30,87 @@ const safety = {
 	wrapMode: "balanced" as const,
 };
 
+function expectNoEditorialOverlap(
+	placements: ReturnType<typeof buildEditorialLockupLayout>["placements"],
+	padding: number,
+) {
+	for (let leftIndex = 0; leftIndex < placements.length; leftIndex += 1) {
+		for (let rightIndex = leftIndex + 1; rightIndex < placements.length; rightIndex += 1) {
+			const left = placements[leftIndex];
+			const right = placements[rightIndex];
+			expect(
+				left.x + left.width / 2 + padding <= right.x - right.width / 2 ||
+				right.x + right.width / 2 + padding <= left.x - left.width / 2 ||
+				left.y + left.height / 2 + padding <= right.y - right.height / 2 ||
+				right.y + right.height / 2 + padding <= left.y - left.height / 2,
+			).toBe(true);
+		}
+	}
+}
+
 describe("Editorial Lockup canonical layout", () => {
+	test("keeps wide words and punctuation out of each other's boxes", () => {
+		const words: TimedCaptionWord[] = [
+			{ word: "How", start: 0, end: 0.25, score: 1 },
+			{ word: "id", start: 0.25, end: 0.5, score: 1 },
+			{ word: "become?", start: 0.5, end: 0.75, score: 1 },
+			{ word: "great?", start: 0.75, end: 1, score: 1 },
+		];
+		const caption: Caption = {
+			id: "editorial-wide-glyphs",
+			start: 0,
+			end: 1.2,
+			text: "How id become? great?",
+			lang: "english",
+			theme: "modern_minimalist_lockup",
+			words,
+		};
+		const config = normalizeModernMinimalistStyleConfig(
+			toOriginalCaptionStyleConfig({ style: getCapinstaPresetStyle("modern_minimalist_lockup") }),
+		);
+		const safeLayout = resolveSafeCaptionLayout(config, {
+			canvas,
+			previewScale: 1,
+			words,
+			text: caption.text,
+			safety,
+		});
+		const frame = buildEditorialLockupLayout(words, caption, config, safeLayout, canvas, 1);
+		expectNoEditorialOverlap(frame.placements, frame.collisionPadding);
+	});
+
+	test("Pair Font Lockup alternates exactly two fonts in reading order", () => {
+		const words: TimedCaptionWord[] = [
+			{ word: "Make", start: 0, end: 0.25, score: 1 },
+			{ word: "every", start: 0.25, end: 0.5, score: 1 },
+			{ word: "word", start: 0.5, end: 0.75, score: 1 },
+			{ word: "matter", start: 0.75, end: 1, score: 1 },
+		];
+		const caption: Caption = {
+			id: "pair-font-order",
+			start: 0,
+			end: 1.2,
+			text: "Make every word matter",
+			lang: "english",
+			theme: "pair_font_lockup",
+			words,
+		};
+		const config = normalizeModernMinimalistStyleConfig(
+			toOriginalCaptionStyleConfig({ style: getCapinstaPresetStyle("pair_font_lockup") }),
+		);
+		const safeLayout = resolveSafeCaptionLayout(config, {
+			canvas,
+			previewScale: 1,
+			words,
+			text: caption.text,
+			safety,
+		});
+		const frame = buildEditorialLockupLayout(words, caption, config, safeLayout, canvas, 1);
+		expect(frame.placements.map((placement) => placement.fontFamily)).toEqual([
+			'"Losta Masta"', '"Poppins"', '"Losta Masta"', '"Poppins"',
+		]);
+		expectNoEditorialOverlap(frame.placements, frame.collisionPadding);
+	});
 	test("keeps ika / 10 / 20 as three independent placements", () => {
 		const words: TimedCaptionWord[] = [
 			{ word: "ika", start: 15, end: 15.4, score: 1 },
@@ -173,6 +253,7 @@ describe("Editorial Lockup canonical layout", () => {
 			"dynamic_punch",
 			"apple_cinematic",
 			"modern_minimalist_lockup",
+			"pair_font_lockup",
 		] as const;
 		const times = [14.967, 15, 15.016, 15.033, 15.05, 15.083, 15.1, 15.15, 15.25, 15.75, 16.49, 16.5];
 

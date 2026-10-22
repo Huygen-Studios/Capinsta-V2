@@ -31,6 +31,7 @@ export type CaptionTheme =
   | "mrbeast_style"
   | "apple_cinematic"
   | "modern_minimalist_lockup"
+  | "pair_font_lockup"
   | "focus_hierarchy"
   | "dynamic_punch"
   | "viral_word_highlight"
@@ -58,6 +59,7 @@ export type CaptionStylePresetId =
   | "mrbeast_style"
   | "apple_cinematic"
   | "modern_minimalist_lockup"
+  | "pair_font_lockup"
   | "focus_hierarchy"
   | "dynamic_punch";
 
@@ -630,6 +632,21 @@ export const CAPTION_THEMES: Record<CaptionTheme, CaptionStyle> = {
   modern_minimalist_lockup: {
     fontSize: 112,
     fontFamily: "'Inter', 'Helvetica Neue', 'SF Pro Display', Arial, sans-serif",
+    color: "#ffffff",
+    backgroundColor: "transparent",
+    bold: true,
+    outline: false,
+    position: "center",
+    textTransform: "none",
+    letterSpacing: "0",
+    borderRadius: "0",
+    padding: "0",
+    shadow: "none",
+    animation: "slide-up",
+  },
+  pair_font_lockup: {
+    fontSize: 100,
+    fontFamily: "'Poppins', Arial, sans-serif",
     color: "#ffffff",
     backgroundColor: "transparent",
     bold: true,

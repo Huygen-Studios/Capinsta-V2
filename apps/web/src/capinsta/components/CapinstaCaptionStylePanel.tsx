@@ -154,6 +154,7 @@ export function CapinstaCaptionStylePanel(
 	if (!style) return null;
 	const usesHierarchyLayout =
 		style.presetId === "modern_minimalist_lockup" ||
+		style.presetId === "pair_font_lockup" ||
 		style.presetId === "focus_hierarchy";
 
 	function replaceRecord(nextRecord: CapinstaCaptionDocumentRecord) {

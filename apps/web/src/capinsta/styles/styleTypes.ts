@@ -7,6 +7,7 @@ export type CapinstaCaptionPresetId =
 	| "kinetic_fade"
 	| "mrbeast_style"
 	| "modern_minimalist_lockup"
+	| "pair_font_lockup"
 	| "focus_hierarchy"
 	| "dynamic_punch";
 

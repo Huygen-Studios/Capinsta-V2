@@ -411,9 +411,7 @@ function paintEditorialLockupFrame({
 	timeSeconds: number;
 	canvasSize: CaptionCanvasSize;
 }): CapinstaWysiwygExportResult {
-	const strategy = renderData.captionStyle.presetId === "focus_hierarchy"
-		? "focus_hierarchy"
-		: "modern_minimalist_lockup";
+	const strategy = renderData.captionStyle.presetId;
 	const model = createCapinstaRenderModelFromExportData({
 		renderData,
 		activeWordIds,
@@ -510,7 +508,7 @@ function paintEditorialLockupFrame({
 		ctx.globalAlpha = motion.opacity;
 		ctx.translate(placement.x, placement.y + motion.translateY);
 		ctx.scale(motion.scale, motion.scale);
-		ctx.font = `${config.fontWeight} ${placement.fontSize}px ${resolveFontFamily(placement.isAnchor ? config.bigFontFamily || config.fontFamily : config.smallFontFamily || config.fontFamily)}, sans-serif`;
+		ctx.font = `${config.fontWeight} ${placement.fontSize}px ${placement.fontFamily}, sans-serif`;
 		drawTextWithOptionalStroke({
 			ctx,
 			text: word.word,
@@ -872,7 +870,7 @@ export function paintCapinstaCaptionFrame({
 			strategy: "apple_cinematic",
 		});
 	}
-	if (presetId === "modern_minimalist_lockup" || presetId === "focus_hierarchy") {
+	if (presetId === "modern_minimalist_lockup" || presetId === "pair_font_lockup" || presetId === "focus_hierarchy") {
 		return paintEditorialLockupFrame({
 			ctx,
 			renderData,
