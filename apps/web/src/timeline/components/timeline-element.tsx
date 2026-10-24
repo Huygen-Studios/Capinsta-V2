@@ -24,6 +24,7 @@ import {
 } from "@/timeline";
 import { getTrackHeight } from "./track-layout";
 import { getTimelineElementClassName, TIMELINE_TRACK_THEME } from "./theme";
+import type { TimelineElementLane } from "./overlap-lanes";
 import {
 	ContextMenu,
 	ContextMenuContent,
@@ -220,6 +221,7 @@ interface TimelineElementProps {
 	}) => void;
 	dragView: ElementDragView;
 	isDropTarget?: boolean;
+	lane?: TimelineElementLane;
 }
 
 export function TimelineElement({
@@ -232,6 +234,7 @@ export function TimelineElement({
 	onElementClick,
 	dragView,
 	isDropTarget = false,
+	lane,
 }: TimelineElementProps) {
 	const mediaAssets = useEditor((e) => e.media.getAssets());
 	const { selectedElements } = useElementSelection();
@@ -352,6 +355,11 @@ export function TimelineElement({
 	const hasKeyframes = elementKeyframes.length > 0;
 	const expansionHeight = getExpansionHeight({ rows: expandedRows });
 	const baseTrackHeight = getTrackHeight({ type: track.type });
+	const laneCount = Math.max(1, lane?.count ?? 1);
+	const laneIndex = Math.min(laneCount - 1, Math.max(0, lane?.index ?? 0));
+	const usesOverlapLane = laneCount > 1 && expandedRows.length === 0;
+	const displayedTrackHeight =
+		usesOverlapLane ? baseTrackHeight / laneCount : baseTrackHeight;
 
 	const expandedContent =
 		isExpanded && expandedRows.length > 0 ? (
@@ -380,14 +388,21 @@ export function TimelineElement({
 			<ContextMenu>
 				<ContextMenuTrigger asChild>
 					<div
-						className="absolute top-0 select-none"
+						className="absolute select-none transition-[top,height] duration-100"
 						style={{
 							left: `${elementLeft}px`,
 							width: `${elementWidth}px`,
+							top:
+								usesOverlapLane
+									? `${(laneIndex / laneCount) * 100}%`
+									: 0,
 							height:
 								expandedRows.length > 0
 									? `${baseTrackHeight + expansionHeight}px`
-									: "100%",
+									: usesOverlapLane
+										? `${100 / laneCount}%`
+										: "100%",
+							zIndex: isSelected ? laneCount + 1 : laneIndex + 1,
 							transform:
 								isDragging && isBeingDragged
 									? `translate3d(0, ${dragOffsetY}px, 0)`
@@ -400,7 +415,7 @@ export function TimelineElement({
 							track={track}
 							isSelected={isSelected}
 							isExpanded={expandedRows.length > 0}
-							baseTrackHeight={baseTrackHeight}
+							baseTrackHeight={displayedTrackHeight}
 							expandedContent={expandedContent}
 							onElementClick={onElementClick}
 							onElementMouseDown={onElementMouseDown}
@@ -410,7 +425,7 @@ export function TimelineElement({
 						{isSelected && (
 							<div
 								className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden"
-								style={{ height: `${baseTrackHeight}px` }}
+								style={{ height: `${displayedTrackHeight}px` }}
 							>
 								<KeyframeIndicators
 									indicators={keyframeIndicators}

@@ -1,11 +1,13 @@
 "use client";
 
+import { useMemo } from "react";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { TimelineElement } from "./timeline-element";
 import type { TimelineTrack } from "@/timeline";
 import type { TimelineElement as TimelineElementType } from "@/timeline";
 import { TIMELINE_LAYERS } from "./layers";
 import type { ElementDragView } from "@/timeline";
+import { resolveTimelineElementLanes } from "./overlap-lanes";
 
 interface TimelineTrackContentProps {
 	track: TimelineTrack;
@@ -46,6 +48,10 @@ export function TimelineTrackContent({
 	targetElementId = null,
 }: TimelineTrackContentProps) {
 	const { isElementSelected } = useElementSelection();
+	const elementLanes = useMemo(
+		() => resolveTimelineElementLanes(track.elements),
+		[track.elements],
+	);
 
 	return (
 		<div className="relative size-full">
@@ -104,6 +110,7 @@ export function TimelineTrackContent({
 								}
 								dragView={dragView}
 								isDropTarget={element.id === targetElementId}
+								lane={elementLanes.get(element.id)}
 							/>
 						);
 					})
