@@ -30,8 +30,8 @@ export interface ActiveCapinstaCaptionState {
 	activeWordIds: string[];
 }
 
-function normalizeCaptionText(text: string): string {
-	return text.trim().replace(/\s+/g, " ");
+function normalizeCaptionText(text: string | undefined): string {
+	return text?.trim().replace(/\s+/g, " ") ?? "";
 }
 
 function getTextTrack({
