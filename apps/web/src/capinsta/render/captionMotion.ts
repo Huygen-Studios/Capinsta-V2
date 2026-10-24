@@ -136,10 +136,12 @@ export function resolveWordMotionFromFrames({
 
 export function resolveEntranceMotion({
 	wordStart,
+	wordEnd,
 	timeSeconds,
 	config,
 }: {
 	wordStart: number;
+	wordEnd?: number;
 	timeSeconds: number;
 	config: CaptionStyleConfig;
 }): CaptionWordMotionState {
@@ -157,10 +159,20 @@ export function resolveEntranceMotion({
 		0,
 		motionFramesSince({ timeSeconds, startSeconds: wordStart }),
 	);
-	const duration = Math.max(
+	const defaultDuration = Math.max(
 		2,
 		Math.round(8 / Math.max(0.4, config.animationSpeed)),
 	);
+	const duration =
+		wordEnd !== undefined && wordEnd > wordStart
+			? Math.max(
+					0.001,
+					Math.min(
+						defaultDuration,
+						(wordEnd - wordStart) * CAPTION_MOTION_TIMEBASE_FPS * 0.8,
+					),
+				)
+			: defaultDuration;
 	const raw = clamp(ageFrames / duration);
 	const progress = easeInOutCubic(raw);
 
@@ -258,6 +270,7 @@ export function resolveSpecializedWordMotion({
 	strategy,
 	timeSeconds,
 	wordStart,
+	wordEnd,
 	captionStart,
 	captionEnd,
 	active,
@@ -271,12 +284,18 @@ export function resolveSpecializedWordMotion({
 		| "dynamic_punch";
 	timeSeconds: number;
 	wordStart: number;
+	wordEnd?: number;
 	captionStart: number;
 	captionEnd: number;
 	active: boolean;
 	config: CaptionStyleConfig;
 }): CaptionWordMotionState {
-	const entrance = resolveEntranceMotion({ wordStart, timeSeconds, config });
+	const entrance = resolveEntranceMotion({
+		wordStart,
+		wordEnd,
+		timeSeconds,
+		config,
+	});
 	const wordMotion = resolveWordMotionFromFrames({
 		ageFrames: Math.max(0, motionFramesSince({ timeSeconds, startSeconds: wordStart })),
 		config,
@@ -302,8 +321,14 @@ export function resolveSpecializedWordMotion({
 		};
 	}
 	if (strategy === "apple_cinematic") {
+		const revealDuration = Math.min(
+			Math.max(0.001, config.revealDuration || 0.32),
+			wordEnd !== undefined && wordEnd > wordStart
+				? Math.max(0.001, (wordEnd - wordStart) * 0.8)
+				: Number.POSITIVE_INFINITY,
+		);
 		const progress = easeOutExpo(
-			(timeSeconds - wordStart) / Math.max(0.001, config.revealDuration || 0.32),
+			(timeSeconds - wordStart) / revealDuration,
 		);
 		return {
 			...entrance,
@@ -314,7 +339,13 @@ export function resolveSpecializedWordMotion({
 		};
 	}
 	if (strategy === "kinetic_fade") {
-		const progress = clamp((timeSeconds - wordStart) / 0.18);
+		const revealDuration = Math.min(
+			0.18,
+			wordEnd !== undefined && wordEnd > wordStart
+				? Math.max(0.001, (wordEnd - wordStart) * 0.8)
+				: Number.POSITIVE_INFINITY,
+		);
+		const progress = clamp((timeSeconds - wordStart) / revealDuration);
 		return {
 			...entrance,
 			opacity: entrance.opacity * progress,

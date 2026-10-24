@@ -66,6 +66,29 @@ describe("caption motion", () => {
 		expect(atStart.translateY).toBe(15);
 	});
 
+	test("finishes compressed word reveals before the word window ends", () => {
+		const entrance = resolveEntranceMotion({
+			wordStart: 1,
+			wordEnd: 1.1,
+			timeSeconds: 1.09,
+			config,
+		});
+		const apple = resolveSpecializedWordMotion({
+			strategy: "apple_cinematic",
+			timeSeconds: 1.09,
+			wordStart: 1,
+			wordEnd: 1.1,
+			captionStart: 1,
+			captionEnd: 1.1,
+			active: true,
+			config,
+		});
+
+		expect(entrance.opacity).toBe(1);
+		expect(apple.opacity).toBe(1);
+		expect(apple.blur).toBe(0);
+	});
+
 	test("dynamic punch settles without depending on sample rate", () => {
 		const early = resolveDynamicPunch({
 			timeSeconds: 1.04,

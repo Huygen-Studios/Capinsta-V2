@@ -182,8 +182,8 @@ function wordMotionTransform(ageFrames: number, config: CaptionStyleConfig, isAn
   return `translateY(${motion.translateY.toFixed(3)}px) scale(${motion.scale.toFixed(3)}) scaleX(${motion.scaleX?.toFixed(3)}) scaleY(${motion.scaleY?.toFixed(3)})`;
 }
 
-function wordEntranceStyle(wordStart: number, currentTime: number, _fps: number, config: CaptionStyleConfig): React.CSSProperties {
-  const motion = resolveEntranceMotion({ wordStart, timeSeconds: currentTime, config });
+function wordEntranceStyle(wordStart: number, wordEnd: number, currentTime: number, _fps: number, config: CaptionStyleConfig): React.CSSProperties {
+  const motion = resolveEntranceMotion({ wordStart, wordEnd, timeSeconds: currentTime, config });
   return {
     opacity: motion.opacity,
     transform: combineTransforms(
@@ -252,7 +252,7 @@ function renderMrBeastStyle(
       >
         {words.map((word, index) => {
           const visible = currentTime >= word.start;
-          const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
+          const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, config);
           const popScale = config.animationType === "none" ? 1 : resolveMrBeastPopScale({ timeSeconds: currentTime, wordStart: word.start, config });
           const tiltSeed = stableHash(`${activeCaption.id}-${word.originalWord || word.word}-${index}`);
           const tilt = config.randomTiltEnabled ? (tiltSeed % 61) / 10 - 3 : 0;
@@ -396,7 +396,6 @@ function renderAppleCinematic(
   const layout = resolveSafeCaptionLayout(config, { canvas: canvasSize, previewScale: scale, words });
   const fontSize = layout.fontSize;
   const positionStyle = buildConfigPositionStyle(config, layout);
-  const revealDuration = config.revealDuration || 0.32;
   const yOffset = (config.revealYOffset || 30) * scale;
   const blur = config.revealBlur || 25;
   const stroke = config.textStrokeEnabled ? `${Math.max(0.5, config.textStrokeWidth * scale)}px ${config.textStrokeColor}` : undefined;
@@ -418,8 +417,12 @@ function renderAppleCinematic(
         }}
       >
         {words.map((word, index) => {
+          const revealDuration = Math.min(
+            config.revealDuration || 0.32,
+            Math.max(0.001, (word.end - word.start) * 0.8)
+          );
           const progress = easeOutExpo((currentTime - word.start) / revealDuration);
-          const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
+          const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, config);
           return (
             <span
               key={`${activeCaption.id}-apple-${index}-${word.start}`}
@@ -1017,7 +1020,7 @@ function renderModernMinimalistLockup(
         {lockup.placements.map((placement) => {
           const word = words[placement.index];
           const visible = currentTime >= word.start && currentTime < wordGroup.end;
-          const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
+          const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, config);
           const isActive = placement.index === activeIndex;
           const isHighlighted = config.smartHighlightEnabled ? placement.isAnchor : isActive;
           const glow = config.activeWordGlow && isHighlighted ? `0 0 ${Math.round(12 * scale)}px ${config.activeWordColor}` : "";
@@ -1106,7 +1109,7 @@ function renderKineticWords(
       <div className="max-w-full leading-snug" style={{ textAlign: config.alignment, ...SAFE_CAPTION_TEXT_STYLE }}>
         {tokens.map((word, index) => {
           const progress = Math.max(0, Math.min(1, (currentTime - word.start) / 0.18));
-          const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
+          const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, config);
           const ageFrames = Math.max(0, motionFramesSince({ timeSeconds: currentTime, startSeconds: word.start }));
           const motion = wordMotionTransform(ageFrames, config);
           return (
@@ -1160,7 +1163,7 @@ function renderAttentionPunch(
         {words.map((word, index) => {
           const active = index === activeIndex;
           const spoken = currentTime >= word.start;
-          const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
+          const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, config);
           const ageFrames = Math.max(0, motionFramesSince({ timeSeconds: currentTime, startSeconds: word.start }));
           const motion = wordMotionTransform(ageFrames, config);
           const baseShadow = buildConfigTextShadow(config);
@@ -1328,7 +1331,7 @@ export default function CaptionRenderer({
             const isActive = currentTime >= word.start && currentTime < word.end;
             const ageFrames = Math.max(0, motionFramesSince({ timeSeconds: currentTime, startSeconds: word.start }));
             const motion = wordMotionTransform(ageFrames, resolvedConfig);
-            const entrance = wordEntranceStyle(word.start, currentTime, fps, resolvedConfig);
+            const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, resolvedConfig);
             return (
               <span
                 key={`${activeCaption.id}-w${idx}`}

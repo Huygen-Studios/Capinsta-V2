@@ -85,17 +85,30 @@ function roundedRect({
 }
 
 function toAlignedWords(renderData: CapinstaTextRenderData): ExportAlignedWord[] {
-	const words = renderData.words.length
+	const completeTimedWords = renderData.words.filter(
+		(word) =>
+			word.start >= renderData.clipStart - 0.001 &&
+			word.end <= renderData.clipEnd + 0.001,
+	);
+	const words =
+		completeTimedWords.length === renderData.words.length &&
+		renderData.words.length > 0
 		? renderData.words
 		: renderData.clipText
 				.trim()
 				.split(/\s+/)
 				.filter(Boolean)
-				.map((text, index) => ({
+				.map((text, index, tokens) => ({
 					id: `${renderData.clipId}-fallback-${index}`,
 					text,
-					start: renderData.clipStart,
-					end: renderData.clipEnd,
+					start:
+						renderData.clipStart +
+						((renderData.clipEnd - renderData.clipStart) * index) /
+							Math.max(1, tokens.length),
+					end:
+						renderData.clipStart +
+						((renderData.clipEnd - renderData.clipStart) * (index + 1)) /
+							Math.max(1, tokens.length),
 				}));
 	return words.map((word) => ({
 		id: word.id,
@@ -332,6 +345,7 @@ function drawInlinePresetCaption({
 				strategy,
 				timeSeconds,
 				wordStart: word.start,
+				wordEnd: word.end,
 				captionStart,
 				captionEnd,
 				active,
@@ -509,6 +523,7 @@ function paintEditorialLockupFrame({
 		if (!word || timeSeconds < word.start || timeSeconds >= wordGroup.end) continue;
 		const motion = resolveEntranceMotion({
 			wordStart: word.start,
+			wordEnd: word.end,
 			timeSeconds,
 			config,
 		});

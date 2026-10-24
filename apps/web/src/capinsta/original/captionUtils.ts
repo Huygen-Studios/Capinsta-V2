@@ -178,7 +178,17 @@ export function getRenderableCaptionWords(caption: Caption): AlignedWord[] {
     return synthesizeCaptionWords(caption);
   }
 
-  return inRange.length ? inRange : synthesizeCaptionWords(caption);
+  if (inRange.length !== words.length) {
+    warnSyntheticRenderableTiming(caption, "some caption words are outside caption range");
+    return synthesizeCaptionWords(caption);
+  }
+
+  if (words.some((word) => word.start < start - 0.001 || word.end > end + 0.001)) {
+    warnSyntheticRenderableTiming(caption, "caption word timing exceeds caption range");
+    return synthesizeCaptionWords(caption);
+  }
+
+  return inRange;
 }
 
 function expandTimedWord(word: AlignedWord): AlignedWord[] {

@@ -73,12 +73,18 @@ function wordMotionTransform(ageFrames: number, config: CaptionStyleConfig) {
   return "translateY(0) scale(1)";
 }
 
-function wordEntranceStyle(wordStart: number, currentTime: number, _fps: number, config: CaptionStyleConfig) {
+function wordEntranceStyle(wordStart: number, wordEnd: number, currentTime: number, _fps: number, config: CaptionStyleConfig) {
   if (currentTime < wordStart) return { opacity: 0, transform: "translateY(0) scale(1)" };
   if (config.entranceAnimation === "none") return { opacity: 1, transform: "translateY(0) scale(1)" };
 
   const ageFrames = Math.max(0, (currentTime - wordStart) * CAPTION_MOTION_TIMEBASE_FPS);
-  const duration = Math.max(2, Math.round(8 / Math.max(0.4, config.animationSpeed)));
+  const duration = Math.max(
+    0.001,
+    Math.min(
+      Math.max(2, Math.round(8 / Math.max(0.4, config.animationSpeed))),
+      Math.max(0.001, (wordEnd - wordStart) * CAPTION_MOTION_TIMEBASE_FPS * 0.8)
+    )
+  );
   const progress = Math.max(0, Math.min(1, ageFrames / duration));
 
   if (config.entranceAnimation === "fade") {
@@ -159,11 +165,11 @@ export default function ViralWordHighlightCaption({
                 textTransform: "uppercase",
                 color: isActive ? "#22f4b8" : isVisible ? "#ffffff" : "transparent",
                 opacity: (() => {
-                  const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
+                  const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, config);
                   return currentTime >= word.start ? entrance.opacity : 0;
                 })(),
                 transform: (() => {
-                  const entrance = wordEntranceStyle(word.start, currentTime, fps, config);
+                  const entrance = wordEntranceStyle(word.start, word.end, currentTime, fps, config);
                   const ageFrames = wordActivationProgressFrames(word, currentTime, CAPTION_MOTION_TIMEBASE_FPS);
                   const active = isActive ? activeWordTransform(word, currentTime, fps) : "translateY(0) scale(1)";
                   const motion = wordMotionTransform(ageFrames, config);

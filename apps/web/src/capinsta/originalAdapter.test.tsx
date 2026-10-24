@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import OriginalCaptionRenderer from "./original/CaptionRenderer";
-import { getActiveWordIndex } from "./original/captionUtils";
+import {
+	getActiveWordIndex,
+	getRenderableCaptionWords,
+} from "./original/captionUtils";
 import {
 	toOriginalCaption,
 	toOriginalCaptionStyleConfig,
@@ -99,6 +102,25 @@ describe("original Capinsta renderer adapter", () => {
 		expect(getActiveWordIndex(caption.words, 0.4)).toBe(1);
 		expect(getActiveWordIndex(caption.words, 0.8)).toBe(2);
 		expect(getActiveWordIndex(caption.words, 1.6)).toBe(-1);
+	});
+
+	test("redistributes every word when shortened timing would drop later words", () => {
+		const document = buildDocument();
+		document.clips[0] = { ...document.clips[0]!, end: 0.7 };
+		const caption = toOriginalCaption({
+			document,
+			clip: document.clips[0]!,
+		});
+		const words = getRenderableCaptionWords(caption);
+
+		expect(words.map((word) => word.word)).toEqual([
+			"change",
+			"your",
+			"life",
+			"today",
+		]);
+		expect(words.at(-1)?.start).toBeLessThan(caption.end);
+		expect(words.at(-1)?.end).toBe(caption.end);
 	});
 
 	test("maps Editorial Lockup to original anchor/support layout fields", () => {
