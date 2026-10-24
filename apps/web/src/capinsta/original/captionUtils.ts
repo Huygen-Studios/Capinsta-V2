@@ -172,6 +172,13 @@ export function getRenderableCaptionWords(caption: Caption): AlignedWord[] {
     return synthesizeCaptionWords(caption);
   }
 
+  const captionText = normalizeDisplayedCaptionText(caption.text, caption.lang).toLocaleLowerCase();
+  const timedText = normalizeDisplayedCaptionText(words.map(getWordDisplayText).join(" "), caption.lang).toLocaleLowerCase();
+  if (captionText && timedText !== captionText) {
+    warnSyntheticRenderableTiming(caption, "caption word ids do not cover the full caption text");
+    return synthesizeCaptionWords(caption);
+  }
+
   const inRange = words.filter((word) => word.end > start + 0.001 && word.start < end - 0.001);
   if (inRange.length === 0) {
     warnSyntheticRenderableTiming(caption, "caption words are outside caption range");

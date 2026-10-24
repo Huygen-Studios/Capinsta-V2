@@ -104,9 +104,13 @@ describe("original Capinsta renderer adapter", () => {
 		expect(getActiveWordIndex(caption.words, 1.6)).toBe(-1);
 	});
 
-	test("redistributes every word when shortened timing would drop later words", () => {
+	test("rebuilds every word when saved word ids cover only part of a shortened caption", () => {
 		const document = buildDocument();
-		document.clips[0] = { ...document.clips[0]!, end: 0.7 };
+		document.clips[0] = {
+			...document.clips[0]!,
+			end: 0.7,
+			wordIds: ["w1", "w2"],
+		};
 		const caption = toOriginalCaption({
 			document,
 			clip: document.clips[0]!,

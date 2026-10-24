@@ -1,5 +1,8 @@
 import type { CapinstaTextRenderData } from "../exportRender";
-import { getWordDisplayText } from "../original/captionUtils";
+import {
+	getWordDisplayText,
+	normalizeDisplayedCaptionText,
+} from "../original/captionUtils";
 import {
 	backgroundRgba,
 	directionalShadow,
@@ -85,12 +88,18 @@ function roundedRect({
 }
 
 function toAlignedWords(renderData: CapinstaTextRenderData): ExportAlignedWord[] {
+	const completeText =
+		normalizeDisplayedCaptionText(
+			renderData.words.map((word) => word.text).join(" "),
+		).toLocaleLowerCase() ===
+		normalizeDisplayedCaptionText(renderData.clipText).toLocaleLowerCase();
 	const completeTimedWords = renderData.words.filter(
 		(word) =>
 			word.start >= renderData.clipStart - 0.001 &&
 			word.end <= renderData.clipEnd + 0.001,
 	);
 	const words =
+		completeText &&
 		completeTimedWords.length === renderData.words.length &&
 		renderData.words.length > 0
 		? renderData.words
