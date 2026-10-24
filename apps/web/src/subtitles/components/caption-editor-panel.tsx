@@ -52,8 +52,10 @@ import {
 } from "@/wasm";
 import {
 	findCapinstaBindingForElement,
+	hasCompleteCapinstaTimelineBindings,
 	resolveCapinstaElementForClip,
 } from "@/capinsta/captionTimelineSync";
+import { applyDocumentToTracks } from "@/capinsta/captionDocumentTimeline";
 import { cn } from "@/utils/ui";
 
 function clipWords({
@@ -560,6 +562,26 @@ export function CaptionEditorPanel({
 		},
 		[currentRecord, editor],
 	);
+	const ensureTimelineCarriers = useCallback(() => {
+		const tracks = editor.scenes.getActiveScene().tracks;
+		if (
+			!currentRecord ||
+			hasCompleteCapinstaTimelineBindings({ record: currentRecord, tracks })
+		) {
+			return tracks;
+		}
+		const repairedTracks = applyDocumentToTracks({
+			record: currentRecord,
+			tracks,
+		});
+		if (repairedTracks !== tracks) {
+			editor.timeline.updateTracks(repairedTracks);
+		}
+		return repairedTracks;
+	}, [currentRecord, editor]);
+	useEffect(() => {
+		ensureTimelineCarriers();
+	}, [ensureTimelineCarriers]);
 	const selectClip = useCallback(
 		(clip: NeutralCaptionClip) => {
 			if (!currentRecord) return;
@@ -567,9 +589,10 @@ export function CaptionEditorPanel({
 			editor.playback.seek({
 				time: mediaTimeFromSeconds({ seconds: clip.start }),
 			});
+			const tracks = ensureTimelineCarriers();
 			const element = resolveCapinstaElementForClip({
 				record: currentRecord,
-				tracks: editor.scenes.getActiveScene().tracks,
+				tracks,
 				clipId: clip.id,
 			});
 			if (element) {
@@ -581,7 +604,7 @@ export function CaptionEditorPanel({
 				});
 			}
 		},
-		[currentRecord, editor],
+		[currentRecord, editor, ensureTimelineCarriers],
 	);
 	useEffect(() => {
 		if (!document) return;

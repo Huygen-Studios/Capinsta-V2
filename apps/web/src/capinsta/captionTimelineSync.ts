@@ -80,10 +80,63 @@ export function resolveCapinstaElementForClip({
 	const track = getTextTrack({ tracks, trackId: record.openCutTrackId });
 	if (!track) return null;
 
-	const clipIndex = sortedClips(record.document).findIndex(
+	const clips = sortedClips(record.document);
+	const clipIndex = clips.findIndex(
 		(clip) => clip.id === clipId,
 	);
-	return clipIndex >= 0 ? (sortedTextElements(track)[clipIndex] ?? null) : null;
+	if (clipIndex < 0) return null;
+
+	const clip = clips[clipIndex]!;
+	const elements = sortedTextElements(track);
+	const legacyElements = elements.filter(
+		(element) => !element.capinstaDocumentId && !element.capinstaClipId,
+	);
+	const timingToleranceSeconds = 0.01;
+	const timingMatch = legacyElements.find((element) => {
+		const start = mediaTimeToSeconds({ time: element.startTime });
+		const end = start + mediaTimeToSeconds({ time: element.duration });
+		return (
+			Math.abs(start - clip.start) <= timingToleranceSeconds &&
+			Math.abs(end - clip.end) <= timingToleranceSeconds &&
+			normalizeCaptionText(element.params.content) ===
+				normalizeCaptionText(clip.text)
+		);
+	});
+	if (timingMatch) return timingMatch;
+
+	// Positional matching is only safe when this is a complete, fully legacy
+	// carrier track. With a missing element it shifts every later caption and can
+	// make a caption-editor click select its neighbour instead.
+	if (
+		legacyElements.length === clips.length &&
+		legacyElements.length === elements.length
+	) {
+		return legacyElements[clipIndex] ?? null;
+	}
+
+	return null;
+}
+
+export function hasCompleteCapinstaTimelineBindings({
+	record,
+	tracks,
+}: {
+	record: CapinstaCaptionDocumentRecord;
+	tracks: SceneTracks;
+}): boolean {
+	const boundClipIds = new Set<string>();
+	for (const track of tracks.overlay) {
+		if (track.type !== "text") continue;
+		for (const element of track.elements) {
+			if (
+				element.capinstaDocumentId === record.document.id &&
+				element.capinstaClipId
+			) {
+				boundClipIds.add(element.capinstaClipId);
+			}
+		}
+	}
+	return record.document.clips.every((clip) => boundClipIds.has(clip.id));
 }
 
 export function findCapinstaBindingForElement({

@@ -82,4 +82,54 @@ describe("caption document timeline mirroring", () => {
 		const track = next.overlay[0];
 		expect(track?.type === "text" ? track.elements : []).toHaveLength(0);
 	});
+
+	test("restores a missing final carrier without reusing the previous caption", () => {
+		const firstClip = record.document.clips[0]!;
+		const secondClip = {
+			...firstClip,
+			id: "clip-2",
+			sourceClipId: "clip-2",
+			start: 4,
+			end: 5,
+			text: "final caption",
+		};
+		const legacyElement: TextElement = {
+			...element,
+			capinstaDocumentId: undefined,
+			capinstaClipId: undefined,
+			startTime: mediaTimeFromSeconds({ seconds: firstClip.start }),
+			duration: mediaTimeFromSeconds({
+				seconds: firstClip.end - firstClip.start,
+			}),
+			params: { content: firstClip.text },
+		};
+		const captionTrack = tracks.overlay[0];
+		if (captionTrack?.type !== "text") {
+			throw new Error("Expected a text caption track");
+		}
+		const legacyTracks: SceneTracks = {
+			...tracks,
+			overlay: [
+				{
+					...captionTrack,
+					elements: [legacyElement],
+				},
+			],
+		};
+		const repaired = applyDocumentToTracks({
+			record: {
+				...record,
+				document: { ...record.document, clips: [firstClip, secondClip] },
+			},
+			tracks: legacyTracks,
+		});
+		const repairedTrack = repaired.overlay[0];
+		expect(repairedTrack?.type).toBe("text");
+		if (repairedTrack?.type !== "text") return;
+		expect(repairedTrack.elements).toHaveLength(2);
+		expect(repairedTrack.elements[0]?.id).toBe(legacyElement.id);
+		expect(repairedTrack.elements[1]?.id).not.toBe(legacyElement.id);
+		expect(repairedTrack.elements[1]?.capinstaClipId).toBe(secondClip.id);
+		expect(repairedTrack.elements[1]?.params.content).toBe(secondClip.text);
+	});
 });
