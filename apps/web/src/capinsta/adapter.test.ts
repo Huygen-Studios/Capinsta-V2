@@ -64,6 +64,28 @@ describe("CapinstaTranscriptV1 adapter", () => {
 		expect(getActiveWordIdsAtTime(document, 2.2)).toEqual([]);
 	});
 
+	test("keeps a resized caption visible when canonical timing is stale", () => {
+		const document = capinstaTranscriptToCaptionDocument(
+			sampleCapinstaTranscriptV1,
+		);
+		const firstClip = document.clips[0]!;
+		const secondClip = document.clips[1]!;
+		const extendedEnd = (firstClip.end + secondClip.start) / 2;
+		const resizedDocument = {
+			...document,
+			clips: document.clips.map((clip) =>
+				clip.id === firstClip.id ? { ...clip, end: extendedEnd } : clip,
+			),
+		};
+
+		expect(
+			getActiveCaptionAtTime(
+				resizedDocument,
+				(firstClip.end + extendedEnd) / 2,
+			)?.id,
+		).toBe(firstClip.id);
+	});
+
 	test("uses original Capinsta chunking instead of backend segment boundaries", () => {
 		const document = capinstaTranscriptToCaptionDocument(
 			sampleCapinstaTranscriptV1,

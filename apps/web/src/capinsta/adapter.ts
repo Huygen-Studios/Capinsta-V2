@@ -608,20 +608,29 @@ export function getActiveCaptionAtTime(
 	timeSeconds: number,
 ): NeutralCaptionClip | undefined {
 	if (!Number.isFinite(timeSeconds)) return undefined;
+	const timelineClip = document.clips.find(
+		(clip) => clip.start <= timeSeconds && timeSeconds < clip.end,
+	);
 	if (document.canonicalTiming) {
 		const state = activeCaptionState({
 			document: document.canonicalTiming,
 			playbackTimeUs: secondsToMicroseconds(timeSeconds),
 		});
-		if (!state) return undefined;
-		const pageIndex = document.canonicalTiming.pages.findIndex(
-			(page) => page.id === state.pageId,
-		);
-		return pageIndex >= 0 ? document.clips[pageIndex] : undefined;
+		if (state) {
+			const pageIndex = document.canonicalTiming.pages.findIndex(
+				(page) => page.id === state.pageId,
+			);
+			const canonicalClip = document.clips[pageIndex];
+			if (
+				canonicalClip &&
+				canonicalClip.start <= timeSeconds &&
+				timeSeconds < canonicalClip.end
+			) {
+				return canonicalClip;
+			}
+		}
 	}
-	return document.clips.find(
-		(clip) => clip.start <= timeSeconds && timeSeconds < clip.end,
-	);
+	return timelineClip;
 }
 
 export function getActiveWordIdsAtTime(

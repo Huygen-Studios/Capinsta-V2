@@ -121,6 +121,32 @@ describe("Capinsta caption timing index", () => {
 		).toBe(shiftedRecord.document.clips[0]!.id);
 	});
 
+	test("keeps a resized clip visible when canonical timing is stale", () => {
+		const record = buildRecord();
+		const firstClip = record.document.clips[0]!;
+		const secondClip = record.document.clips[1]!;
+		const extendedEnd = (firstClip.end + secondClip.start) / 2;
+		const resizedRecord: CapinstaCaptionDocumentRecord = {
+			...record,
+			document: {
+				...record.document,
+				clips: record.document.clips.map((clip) =>
+					clip.id === firstClip.id ? { ...clip, end: extendedEnd } : clip,
+				),
+			},
+		};
+		const index = createCapinstaCaptionTimingIndex({
+			records: [resizedRecord],
+		});
+
+		expect(
+			getActiveCapinstaCaptionStateFromIndex({
+				index,
+				timeSeconds: (firstClip.end + extendedEnd) / 2,
+			})?.clip.id,
+		).toBe(firstClip.id);
+	});
+
 	test("state key changes only when clip or active word changes", () => {
 		const record = buildRecord();
 		const index = createCapinstaCaptionTimingIndex({ records: [record] });

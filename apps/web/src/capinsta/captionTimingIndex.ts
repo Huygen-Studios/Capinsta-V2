@@ -108,22 +108,24 @@ export function getActiveCapinstaCaptionStateFromIndex({
 	if (!Number.isFinite(timeSeconds)) return null;
 
 	for (const indexedRecord of index.records) {
+		const clip = findActiveClip({
+			clips: indexedRecord.clips,
+			timeSeconds,
+		});
+		if (!clip) continue;
+
 		const canonical = indexedRecord.record.document.canonicalTiming;
 		if (canonical) {
 			const active = activeCaptionState({
 				document: canonical,
 				playbackTimeUs: secondsToMicroseconds(timeSeconds),
 			});
-			if (!active) continue;
-			const pageIndex = canonical.pages.findIndex(
-				(page) => page.id === active.pageId,
-			);
-			const clip = indexedRecord.clips[pageIndex];
-			if (!clip) continue;
-			const activeWordIds = clip.disableActiveWordHighlighting
+			const clipWordIds = new Set(clip.wordIds);
+			const activeWordIds = !active || clip.disableActiveWordHighlighting
 				? []
 				: active.activeWordIds.filter(
 						(wordId) =>
+							clipWordIds.has(wordId) &&
 							!indexedRecord.wordsById.get(wordId)
 								?.disableActiveWordHighlighting,
 					);
@@ -134,11 +136,6 @@ export function getActiveCapinstaCaptionStateFromIndex({
 				activeWordIds,
 			};
 		}
-		const clip = findActiveClip({
-			clips: indexedRecord.clips,
-			timeSeconds,
-		});
-		if (!clip) continue;
 		return {
 			record: indexedRecord.record,
 			document: indexedRecord.record.document,
