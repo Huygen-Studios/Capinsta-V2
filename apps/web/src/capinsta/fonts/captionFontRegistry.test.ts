@@ -51,6 +51,20 @@ describe("Capinsta caption font registry", () => {
 		).toBe("KomikaAxis.ttf");
 	});
 
+	test("Telugu font families resolve to their bundled faces", () => {
+		for (const [family, weight, file] of [
+			["Sree Krushnadevaraya", 400, "Sree Krushnadevaraya/Sree Krushnadevaraya Regular.otf"],
+			["Potti Sreeramulu", 400, "Potti Sreeramulu/Potti Sreeramulu Regular.otf"],
+			["Ponnala", 400, "Ponnala/Ponnala Regular.otf"],
+			["Chathura", 700, "Chathura/Chathura Bold.ttf"],
+			["Chathura", 800, "Chathura/Chathura ExtraBold.ttf"],
+		] as const) {
+			const definition = resolveCapinstaFont(family);
+			expect(definition).not.toBeNull();
+			expect(resolveCapinstaFontFace({ definition: definition!, weight, style: "normal" })?.file).toBe(file);
+		}
+	});
+
 	test("every registered bundled face exists in public caption-fonts", () => {
 		for (const definition of CAPINSTA_FONT_REGISTRY) {
 			for (const fontFace of definition.faces) {

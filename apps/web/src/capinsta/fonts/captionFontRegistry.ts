@@ -108,6 +108,39 @@ export const CAPINSTA_FONT_REGISTRY: readonly CapinstaFontDefinition[] = [
 		],
 	},
 	{
+		id: "sree-krushnadevaraya",
+		label: "Sree Krushnadevaraya",
+		cssFamily: "Sree Krushnadevaraya",
+		exportFamily: "Sree Krushnadevaraya",
+		faces: [
+			face("Sree Krushnadevaraya/Sree Krushnadevaraya Regular.otf", 400),
+		],
+	},
+	{
+		id: "potti-sreeramulu",
+		label: "Potti Sreeramulu",
+		cssFamily: "Potti Sreeramulu",
+		exportFamily: "Potti Sreeramulu",
+		faces: [face("Potti Sreeramulu/Potti Sreeramulu Regular.otf", 400)],
+	},
+	{
+		id: "ponnala",
+		label: "Ponnala",
+		cssFamily: "Ponnala",
+		exportFamily: "Ponnala",
+		faces: [face("Ponnala/Ponnala Regular.otf", 400)],
+	},
+	{
+		id: "chathura",
+		label: "Chathura",
+		cssFamily: "Chathura",
+		exportFamily: "Chathura",
+		faces: [
+			face("Chathura/Chathura Bold.ttf", 700),
+			face("Chathura/Chathura ExtraBold.ttf", 800),
+		],
+	},
+	{
 		id: "made-avenue",
 		label: "Made Avenue",
 		cssFamily: "Made Avenue",
