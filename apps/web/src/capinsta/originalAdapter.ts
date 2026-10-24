@@ -141,7 +141,7 @@ export function toOriginalCaption({
 		.map((wordId) => wordsById.get(wordId))
 		.filter((word): word is NeutralCaptionWord => word !== undefined)
 		.map(toOriginalWord);
-	if (!words.length && clip.disableActiveWordHighlighting) {
+	if (!words.length) {
 		// A single phrase-bound render unit prevents the old renderer from inventing per-word timestamps.
 		words.push({
 			word: clip.text,

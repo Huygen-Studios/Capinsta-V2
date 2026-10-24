@@ -339,7 +339,7 @@ export function installCapinstaFontFaceRules(): void {
 		.join("/")}") format("${fontFace.format}");
 	font-weight: ${fontFace.weight};
 	font-style: ${fontFace.style};
-	font-display: block;
+	font-display: swap;
 }`,
 		),
 	).join("\n");

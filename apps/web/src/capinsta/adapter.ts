@@ -373,7 +373,8 @@ function buildNeutralClipsWithOriginalChunking({
 			timingSource: orderedPage.some((word) => Boolean(word.timingNeedsReview))
 				? "estimated"
 				: "provider",
-			disableActiveWordHighlighting: !page.activeWordEffectsEnabled,
+			disableActiveWordHighlighting:
+				!page.activeWordEffectsEnabled || orderedPage.length === 0,
 			sourceClipId: orderedPage.map((word) => word.id).join(":"),
 		};
 	});

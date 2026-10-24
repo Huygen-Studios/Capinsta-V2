@@ -85,7 +85,19 @@ function roundedRect({
 }
 
 function toAlignedWords(renderData: CapinstaTextRenderData): ExportAlignedWord[] {
-	return renderData.words.map((word) => ({
+	const words = renderData.words.length
+		? renderData.words
+		: renderData.clipText
+				.trim()
+				.split(/\s+/)
+				.filter(Boolean)
+				.map((text, index) => ({
+					id: `${renderData.clipId}-fallback-${index}`,
+					text,
+					start: renderData.clipStart,
+					end: renderData.clipEnd,
+				}));
+	return words.map((word) => ({
 		id: word.id,
 		word: word.text,
 		displayedWord: word.text,
@@ -421,13 +433,9 @@ function paintEditorialLockupFrame({
 	const config = normalizeModernMinimalistStyleConfig(model.styleConfig);
 	const allWords = buildEditorialRevealWords(
 		normalizeLockupWords(
-			renderData.words.map<TimedCaptionWord>((word) => ({
-				word: word.text,
-				displayedWord: word.text,
-				originalWord: word.text,
-				start: word.start,
-				end: word.end,
-				score: 1,
+			toAlignedWords(renderData).map<TimedCaptionWord>((word) => ({
+				...word,
+				originalWord: word.word,
 			})),
 		),
 		renderData.clipStart,
