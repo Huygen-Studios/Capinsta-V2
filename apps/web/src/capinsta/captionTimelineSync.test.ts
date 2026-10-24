@@ -235,7 +235,7 @@ describe("Capinsta timeline synchronization", () => {
 		expect(updated!.document.clips[0]!.timingNeedsReview).toBe(false);
 	});
 
-	test("marks timing for review when a caption duration changes", () => {
+	test("retimes words when a caption duration changes", () => {
 		const record = buildRecord();
 		const clip = record.document.clips[0]!;
 		const afterTracks = buildTracks({
@@ -252,13 +252,26 @@ describe("Capinsta timeline synchronization", () => {
 			editedAt: EDITED_AT,
 		});
 
-		expect(updated!.document.clips[0]!.timingNeedsReview).toBe(true);
-		expect(updated!.document.words[0]!.start).toBe(
-			record.document.words[0]!.start,
+		const oldDuration = clip.end - clip.start;
+		const nextDuration = oldDuration - 0.4;
+		expect(updated!.document.clips[0]!.timingNeedsReview).toBe(false);
+		expect(updated!.document.words[0]!.start).toBeCloseTo(
+			clip.start +
+				((record.document.words[0]!.start - clip.start) / oldDuration) *
+					nextDuration,
 		);
-		expect(updated!.document.clips[0]!.manualEdit?.timingReviewReason).toBe(
-			"clip_duration_changed",
-		);
+		expect(updated!.document.words[0]!.timingSource).toBe("manual");
+		expect(
+			updated!.document.clips[0]!.manualEdit?.timingReviewReason,
+		).toBeUndefined();
+		expect(
+			updated!.document.canonicalTiming?.pages[0]?.activeWordEffectsEnabled,
+		).toBe(true);
+		expect(
+			updated!.document.canonicalTiming?.words.find(
+				(word) => word.id === record.document.words[0]!.id,
+			)?.startUs,
+		).toBeCloseTo(updated!.document.words[0]!.start * 1_000_000, 0);
 	});
 
 	test("suppresses the whole generated Capinsta caption track in preview", () => {

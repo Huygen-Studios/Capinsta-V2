@@ -4,6 +4,7 @@ import type {
 	NeutralCaptionWord,
 } from "./types";
 import { generateUUID } from "@/utils/id";
+import { updateCaptionClipTiming } from "./adapter";
 
 const MIN_DURATION = 0.001;
 
@@ -190,45 +191,9 @@ export function updateSegmentTiming({
 	start: number;
 	end: number;
 }): NeutralCaptionDocument {
-	const clip = document.clips.find((item) => item.id === clipId);
-	if (!clip) return document;
-	const oldDuration = Math.max(MIN_DURATION, clip.end - clip.start);
-	const nextDuration = end - start;
-	const ids = new Set(clip.wordIds);
-	return {
-		...document,
-		clips: document.clips.map((item) =>
-			item.id === clipId
-				? {
-						...item,
-						start,
-						end,
-						manuallyEdited: true,
-						timingSource: "manual",
-						timingNeedsReview: false,
-						manualEdit: {
-							...item.manualEdit,
-							originalStart: item.manualEdit?.originalStart ?? item.start,
-							originalEnd: item.manualEdit?.originalEnd ?? item.end,
-							timingEditedAt: new Date().toISOString(),
-						},
-					}
-				: item,
-		),
-		words: document.words.map((word) => {
-			if (!ids.has(word.id)) return word;
-			const relativeStart = (word.start - clip.start) / oldDuration;
-			const relativeEnd = (word.end - clip.start) / oldDuration;
-			const wordStart = start + Math.max(0, Math.min(1, relativeStart)) * nextDuration;
-			const wordEnd = start + Math.max(relativeStart, Math.min(1, relativeEnd)) * nextDuration;
-			return {
-				...word,
-				start: Math.round(wordStart * 1000) / 1000,
-				end: Math.min(end, Math.max(wordStart + MIN_DURATION, Math.round(wordEnd * 1000) / 1000)),
-				timingSource: "manual",
-			};
-		}),
-	};
+	return updateCaptionClipTiming(document, clipId, start, end, {
+		editedAt: new Date().toISOString(),
+	});
 }
 
 export function updateWord({

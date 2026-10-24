@@ -147,7 +147,7 @@ describe("CapinstaTranscriptV1 adapter", () => {
 		);
 	});
 
-	test("marks duration-changing timing edits for review while preserving word timings", () => {
+	test("retimes words proportionally when a clip duration changes", () => {
 		const document = capinstaTranscriptToCaptionDocument(
 			sampleCapinstaTranscriptV1,
 		);
@@ -160,14 +160,21 @@ describe("CapinstaTranscriptV1 adapter", () => {
 		expect(editedClip?.timingSource).toBe("manual");
 		expect(editedClip?.manualEdit?.originalStart).toBe(2.32);
 		expect(editedClip?.manualEdit?.originalEnd).toBe(4.67);
-		expect(edited.words.find((word) => word.id === "word-004")?.start).toBe(
-			2.32,
+		const editedWord = edited.words.find((word) => word.id === "word-004");
+		expect(editedWord?.start).toBeCloseTo(2.5);
+		expect(editedWord?.end).toBeCloseTo(
+			2.5 + ((2.72 - 2.32) / (4.67 - 2.32)) * (4.8 - 2.5),
 		);
-		expect(editedClip?.timingNeedsReview).toBe(true);
-		expect(editedClip?.manualEdit?.timingReviewReason).toBe(
-			"clip_duration_changed",
+		expect(editedWord?.timingNeedsReview).toBe(false);
+		expect(editedClip?.timingNeedsReview).toBe(false);
+		expect(editedClip?.manualEdit?.timingReviewReason).toBeUndefined();
+		expect(
+			edited.canonicalTiming?.words.find((word) => word.id === "word-004")
+				?.startUs,
+		).toBe(2_500_000);
+		expect(edited.manualEdits.notes?.join(" ")).toMatch(
+			/retimed proportionally/,
 		);
-		expect(edited.manualEdits.notes?.join(" ")).toMatch(/timing is rebuilt/);
 	});
 
 	test("offsets word timings when a clip moves without changing duration", () => {

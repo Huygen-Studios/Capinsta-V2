@@ -792,11 +792,15 @@ export function updateCaptionClipTiming(
 		(clip) => clip.id === clipId,
 	);
 	const editedAt = options?.editedAt ?? MANUAL_EDIT_MARKER;
-	const previousDuration = targetClip.end - targetClip.start;
+	const previousDuration = Math.max(0.001, targetClip.end - targetClip.start);
 	const nextDuration = nextEnd - nextStart;
 	const durationChanged = Math.abs(previousDuration - nextDuration) > 0.001;
 	const offset = nextStart - targetClip.start;
 	const targetWordIds = new Set(targetClip.wordIds);
+	const retime = (time: number) =>
+		nextStart +
+		Math.max(0, Math.min(1, (time - targetClip.start) / previousDuration)) *
+			nextDuration;
 
 	const nextClips = document.clips.map<NeutralCaptionClip>((clip) => {
 		if (clip.id !== clipId)
@@ -812,34 +816,33 @@ export function updateCaptionClipTiming(
 			wordIds: [...clip.wordIds],
 			manuallyEdited: true,
 			timingSource: "manual" as const,
-			timingNeedsReview: durationChanged || clip.timingNeedsReview,
+			timingNeedsReview:
+				clip.manualEdit?.timingReviewReason === "clip_duration_changed"
+					? false
+					: clip.timingNeedsReview,
 			manualEdit: {
 				...clip.manualEdit,
 				timingEditedAt: editedAt,
 				originalStart: clip.manualEdit?.originalStart ?? clip.start,
 				originalEnd: clip.manualEdit?.originalEnd ?? clip.end,
-				timingReviewReason: durationChanged
-					? "clip_duration_changed"
-					: clip.manualEdit?.timingReviewReason,
+				timingReviewReason:
+					clip.manualEdit?.timingReviewReason === "clip_duration_changed"
+						? undefined
+						: clip.manualEdit?.timingReviewReason,
 			},
 		};
 	});
 	const nextWords = document.words.map<NeutralCaptionWord>((word) => {
 		if (!targetWordIds.has(word.id)) return { ...word };
-		if (durationChanged) {
-			return {
-				...word,
-				timingNeedsReview: true,
-				timingSourceDetail:
-					"Clip duration changed manually; original word timing preserved.",
-			};
-		}
 		return {
 			...word,
-			start: word.start + offset,
-			end: word.end + offset,
+			start: durationChanged ? retime(word.start) : word.start + offset,
+			end: durationChanged ? retime(word.end) : word.end + offset,
 			timingSource: "manual" as const,
-			timingSourceDetail: "Offset with manually moved caption clip.",
+			timingNeedsReview: false,
+			timingSourceDetail: durationChanged
+				? "Retimed proportionally with manually resized caption clip."
+				: "Offset with manually moved caption clip.",
 			manualOriginalStart: word.manualOriginalStart ?? word.start,
 			manualOriginalEnd: word.manualOriginalEnd ?? word.end,
 		};
@@ -855,12 +858,40 @@ export function updateCaptionClipTiming(
 					durationToleranceUs: 1_000,
 				})
 			: undefined;
+	const nextWordsById = new Map(nextWords.map((word) => [word.id, word]));
+	const canonicalTiming = canonicalEdit
+		? {
+				...canonicalEdit.document,
+				pages: canonicalEdit.document.pages.map((page) =>
+					page.id === canonicalPage?.id && durationChanged
+						? {
+								...page,
+								activeWordEffectsEnabled:
+									!targetClip.disableActiveWordHighlighting,
+							}
+						: page,
+				),
+				words: canonicalEdit.document.words.map((word) => {
+					const retimedWord = nextWordsById.get(word.id);
+					return retimedWord && targetWordIds.has(word.id)
+						? {
+								...word,
+								startUs: secondsToMicroseconds(retimedWord.start),
+								endUs: secondsToMicroseconds(retimedWord.end),
+								timingSource: "manual" as const,
+								timingNeedsReview: false,
+								timingDiagnostic: retimedWord.timingSourceDetail,
+							}
+						: word;
+				}),
+			}
+		: undefined;
 
 	return {
 		...document,
 		clips: nextClips,
 		words: nextWords,
-		canonicalTiming: canonicalEdit?.document,
+		canonicalTiming,
 		manualEdits: {
 			...document.manualEdits,
 			editedAt,
@@ -869,7 +900,7 @@ export function updateCaptionClipTiming(
 			notes: [
 				...(document.manualEdits.notes || []),
 				durationChanged
-					? `Clip ${clipId} duration changed; active-word highlighting disabled until timing is rebuilt.`
+					? `Clip ${clipId} duration changed; associated word timings retimed proportionally.`
 					: `Clip ${clipId} moved; associated word timings offset by ${offset.toFixed(3)} seconds.`,
 			],
 		},

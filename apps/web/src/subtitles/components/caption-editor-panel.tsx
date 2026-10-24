@@ -113,14 +113,20 @@ function TimeInput({
 				size="sm"
 				className="h-auto justify-start px-1 font-mono text-[10px] text-muted-foreground"
 				aria-label={`Edit ${label.toLowerCase()}`}
-				onClick={() => setEditing(true)}
+				onClick={(event) => {
+					event.stopPropagation();
+					setEditing(true);
+				}}
 			>
 				{formatSubtitleTime(value).slice(3)}
 			</Button>
 		);
 	}
 	return (
-		<div className="flex min-w-0 flex-col gap-1">
+		<div
+			className="flex min-w-0 flex-col gap-1"
+			onClick={(event) => event.stopPropagation()}
+		>
 			<label className="sr-only">{label}</label>
 			<Input
 				autoFocus
